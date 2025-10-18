@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package serverapi;
+
+option csharp_namespace = "ClientCore.Protos";
+
+message MessageEnvelope {
+  string id = 1;
+  bytes data = 2;
+  MessageType type = 3;
+}
+
+enum MessageType {
+  REQUEST = 0;
+  RESPONSE = 1;
+  ERROR = 2;
+}

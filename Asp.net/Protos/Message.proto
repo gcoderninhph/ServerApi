@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+option csharp_namespace = "ServerApi.Protos";
+
+package serverapi;
+
+// Thông điệp đơn giản chứa tên và nội dung
+message SimpleMessage {
+    string name = 1;
+    string message = 2;
+}

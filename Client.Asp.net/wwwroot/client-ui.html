@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client Message Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.2);
+            font-size: 14px;
+        }
+        .status.connected { background: #10b981; }
+        .status.disconnected { background: #ef4444; }
+        .controls {
+            padding: 20px 30px;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #f093fb;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background: #e081ea; transform: translateY(-2px); }
+        button:active { transform: translateY(0); }
+        button.danger { background: #ef4444; }
+        button.danger:hover { background: #dc2626; }
+        button.success { background: #10b981; }
+        button.success:hover { background: #059669; }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            min-width: 300px;
+        }
+        select {
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        .stats {
+            padding: 20px 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            background: #f3f4f6;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .stat-label {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        .messages {
+            padding: 30px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .message-item {
+            background: #f9fafb;
+            border-left: 4px solid #f093fb;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-radius: 8px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .message-item.sent { border-left-color: #10b981; background: #f0fdf4; }
+        .message-item.received { border-left-color: #3b82f6; background: #eff6ff; }
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .message-command {
+            font-weight: 700;
+            color: #1f2937;
+            font-size: 16px;
+        }
+        .message-time {
+            color: #6b7280;
+            font-size: 12px;
+        }
+        .message-content {
+            color: #374151;
+            font-size: 14px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .message-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+        }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .badge.sent { background: #d1fae5; color: #065f46; }
+        .badge.received { background: #dbeafe; color: #1e40af; }
+        .badge.pending { background: #fef3c7; color: #92400e; }
+        .badge.delivered { background: #d1fae5; color: #065f46; }
+        .badge.failed { background: #fee2e2; color: #991b1b; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💻 Client Message Monitor</h1>
+            <div class="status disconnected" id="connectionStatus">⚫ Disconnected</div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="messageInput" placeholder="Enter message to send to server...">
+            <select id="transportSelector">
+                <option value="0">🔌 WebSocket</option>
+                <option value="1">📡 TCP Stream</option>
+            </select>
+            <button class="success" onclick="sendMessage()">📤 Send Message</button>
+            <button class="danger" onclick="clearSnapshots()">🗑️ Clear All</button>
+            <button onclick="refreshSnapshots()">🔄 Refresh</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Total Messages</div>
+                <div class="stat-value" id="totalCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📤 Sent</div>
+                <div class="stat-value" id="sentCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📥 Received</div>
+                <div class="stat-value" id="receivedCount">0</div>
+            </div>
+        </div>
+
+        <div class="messages" id="messageList">
+            <div class="empty-state">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                </svg>
+                <h3>No messages yet</h3>
+                <p>Messages will appear here in real-time</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script>
+        let connection;
+        let snapshots = [];
+
+        async function startConnection() {
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("http://localhost:5002/hubs/ui")
+                .withAutomaticReconnect()
+                .configureLogging(signalR.LogLevel.Information)
+                .build();
+
+            connection.on("InitialSnapshots", (data) => {
+                console.log("📦 Received initial snapshots:", data);
+                snapshots = data;
+                renderMessages();
+                updateStats();
+            });
+
+            connection.on("SnapshotUpdated", (snapshot) => {
+                console.log("📸 Snapshot updated:", snapshot);
+                snapshots.unshift(snapshot); // Add to beginning
+                renderMessages();
+                updateStats();
+            });
+
+            connection.on("SnapshotsCleared", () => {
+                console.log("🗑️ Snapshots cleared");
+                snapshots = [];
+                renderMessages();
+                updateStats();
+            });
+
+            connection.on("SnapshotList", (data) => {
+                console.log("📋 Snapshot list:", data);
+                snapshots = data;
+                renderMessages();
+                updateStats();
+            });
+
+            connection.onreconnecting(() => {
+                document.getElementById('connectionStatus').className = 'status disconnected';
+                document.getElementById('connectionStatus').textContent = '⚫ Reconnecting...';
+            });
+
+            connection.onreconnected(() => {
+                document.getElementById('connectionStatus').className = 'status connected';
+                document.getElementById('connectionStatus').textContent = '🟢 Connected';
+                refreshSnapshots();
+            });
+
+            connection.onclose(() => {
+                document.getElementById('connectionStatus').className = 'status disconnected';
+                document.getElementById('connectionStatus').textContent = '⚫ Disconnected';
+            });
+
+            try {
+                await connection.start();
+                document.getElementById('connectionStatus').className = 'status connected';
+                document.getElementById('connectionStatus').textContent = '🟢 Connected';
+                console.log("✅ SignalR Connected!");
+            } catch (err) {
+                console.error("❌ SignalR Connection Error:", err);
+                setTimeout(startConnection, 5000);
+            }
+        }
+
+        function renderMessages() {
+            const messageList = document.getElementById('messageList');
+            
+            if (snapshots.length === 0) {
+                messageList.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                        </svg>
+                        <h3>No messages yet</h3>
+                        <p>Messages will appear here in real-time</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = snapshots.map(snapshot => {
+                const time = new Date(snapshot.timestamp).toLocaleTimeString('vi-VN');
+                const directionClass = snapshot.direction === 0 ? 'sent' : 'received';
+                const directionText = snapshot.direction === 0 ? '📤 Sent' : '📥 Received';
+                const statusText = ['Pending', 'Sending', 'Sent', 'Delivered', 'Failed'][snapshot.status];
+                const statusClass = ['pending', 'sending', 'sent', 'delivered', 'failed'][snapshot.status];
+                
+                return `
+                    <div class="message-item ${directionClass}">
+                        <div class="message-header">
+                            <span class="message-command">${snapshot.command}</span>
+                            <span class="message-time">${time}</span>
+                        </div>
+                        <div class="message-content">${snapshot.content}</div>
+                        <div class="message-meta">
+                            <span class="badge ${directionClass}">${directionText}</span>
+                            <span class="badge ${statusClass}">${statusText}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            messageList.innerHTML = html;
+        }
+
+        function updateStats() {
+            const total = snapshots.length;
+            const sent = snapshots.filter(s => s.direction === 0).length;
+            const received = snapshots.filter(s => s.direction === 1).length;
+
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('sentCount').textContent = sent;
+            document.getElementById('receivedCount').textContent = received;
+        }
+
+        async function clearSnapshots() {
+            if (confirm('Clear all message snapshots?')) {
+                await connection.invoke("ClearSnapshots");
+            }
+        }
+
+        async function refreshSnapshots() {
+            await connection.invoke("GetAllSnapshots");
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+
+            // Get selected transport type
+            const transportSelect = document.getElementById('transportSelector');
+            const transportType = parseInt(transportSelect.value);
+            const transportText = transportType === 0 ? 'WebSocket' : 'TCP';
+
+            try {
+                const response = await fetch('http://localhost:5002/api/message/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        message: message,
+                        transportType: transportType
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log(`✅ Message sent via ${transportText}:`, result);
+                    input.value = ''; // Clear input
+                } else {
+                    console.error('❌ Failed to send message:', result);
+                    alert('Failed to send message: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('❌ Error sending message:', err);
+                alert('Error sending message: ' + err.message);
+            }
+        }
+
+        // Add Enter key support
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('messageInput');
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        sendMessage();
+                    }
+                });
+            }
+        });
+
+        // Start connection on page load
+        startConnection();
+    </script>
+</body>
+</html>
