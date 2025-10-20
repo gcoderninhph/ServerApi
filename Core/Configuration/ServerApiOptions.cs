@@ -11,6 +11,11 @@ public class ServerApiOptions
     public const string SectionName = "ServerApi";
 
     /// <summary>
+    /// Security configuration options.
+    /// </summary>
+    public SecurityConfig? Security { get; set; }
+
+    /// <summary>
     /// WebSocket configuration options.
     /// </summary>
     public WebSocketOptions? WebSocket { get; set; }

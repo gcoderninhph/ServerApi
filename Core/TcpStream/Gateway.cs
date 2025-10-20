@@ -19,6 +19,7 @@ public class TcpGateway : IHostedService
     private readonly ServerApiRegistrar _registrar;
     private readonly ILogger<TcpGateway> _logger;
     private readonly TcpStreamOptions _options;
+    private readonly SecurityConfig _securityConfig;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _acceptTask;
@@ -31,6 +32,16 @@ public class TcpGateway : IHostedService
         _registrar = registrar;
         _logger = logger;
         _options = options.Value.TcpStream ?? new TcpStreamOptions();
+        _securityConfig = options.Value.Security ?? new SecurityConfig();
+        
+        // Log warning if authentication is required for TCP Stream
+        if (_securityConfig.RequireAuthenticatedUser)
+        {
+            _logger.LogWarning(
+                "TCP Stream: RequireAuthenticatedUser is enabled but TCP Stream does not support " +
+                "HTTP-based authentication. Consider implementing custom token-based authentication " +
+                "or use WebSocket transport for authenticated connections.");
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)

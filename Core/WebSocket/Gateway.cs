@@ -20,6 +20,7 @@ public class WebSocketGatewayNew
     private readonly ServerApiRegistrar _registrar;
     private readonly ILogger<WebSocketGatewayNew> _logger;
     private readonly WebSocketOptions _options;
+    private readonly SecurityConfig _securityConfig;
 
     public WebSocketGatewayNew(
         ServerApiRegistrar registrar,
@@ -29,6 +30,7 @@ public class WebSocketGatewayNew
         _registrar = registrar;
         _logger = logger;
         _options = options.Value.WebSocket ?? new WebSocketOptions();
+        _securityConfig = options.Value.Security ?? new SecurityConfig();
     }
 
     public async Task HandleWebSocketAsync(HttpContext context)
@@ -37,6 +39,28 @@ public class WebSocketGatewayNew
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
+        }
+
+        // Extract user from HttpContext if authentication is enabled
+        ClaimsPrincipal? user = null;
+        if (_securityConfig.EnableAuthentication)
+        {
+            user = context.User;
+            
+            // Check if authenticated user is required
+            if (_securityConfig.RequireAuthenticatedUser)
+            {
+                if (user == null || user.Identity == null || !user.Identity.IsAuthenticated)
+                {
+                    _logger.LogWarning("WebSocket connection rejected: User is not authenticated");
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsync("Authentication required");
+                    return;
+                }
+                
+                _logger.LogInformation("WebSocket connection authenticated for user: {UserName}", 
+                    user.Identity.Name ?? "Unknown");
+            }
         }
 
         var socket = await context.WebSockets.AcceptWebSocketAsync();
@@ -52,8 +76,6 @@ public class WebSocketGatewayNew
         var queryParams = context.Request.Query.ToDictionary(
             q => q.Key,
             q => string.Join(", ", q.Value.ToArray()));
-
-        var user = context.User;
 
         var connection = new WebSocketConnection(
             connectionId,
