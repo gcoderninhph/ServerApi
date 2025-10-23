@@ -1,7 +1,7 @@
 using System.Net.Sockets;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
-using ClientCore.Protos;
+using ServerApi.Protos;
 
 namespace ClientCore.TcpStream;
 

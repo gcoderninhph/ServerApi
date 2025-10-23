@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package serverapi;
 
-option csharp_namespace = "ClientCore.Protos";
+option csharp_namespace = "ServerApi.Protos";
 
 message MessageEnvelope {
   string id = 1;
