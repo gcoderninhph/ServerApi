@@ -123,10 +123,11 @@ internal class WebSocketConnection
         }
 
         var commandId = envelope.Id ?? string.Empty;
+        var requestId = envelope.RequestId ?? string.Empty;
         _context!.CommandId = commandId;
 
-        // Create responder that can send at any time
-        var responder = new Responder<object>(env => SendEnvelopeAsync(env), commandId);
+        // Create responder that can send at any time, include requestId for correlation
+        var responder = new Responder<object>(env => SendEnvelopeAsync(env), commandId, string.IsNullOrEmpty(requestId) ? null : requestId);
 
         // Try to find and invoke handler
         var requestBytes = envelope.Data.ToByteArray();

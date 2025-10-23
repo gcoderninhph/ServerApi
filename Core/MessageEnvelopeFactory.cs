@@ -18,12 +18,13 @@ public static class MessageEnvelopeFactory
         return new MessageEnvelope
         {
             Id = id,
+            RequestId = source?.RequestId ?? string.Empty,  // Preserve requestId
             Type = MessageType.Error,
             Data = ByteString.CopyFromUtf8(message ?? string.Empty)
         };
     }
 
-    public static MessageEnvelope CreateResponse(string id, IMessage payload, MessageType type = MessageType.Response)
+    public static MessageEnvelope CreateResponse(string id, IMessage payload, MessageType type = MessageType.Response, string? requestId = null)
     {
         if (payload is null)
         {
@@ -37,6 +38,7 @@ public static class MessageEnvelopeFactory
         return new MessageEnvelope
         {
             Id = envelopeId,
+            RequestId = requestId ?? string.Empty,  // Include requestId
             Type = type,
             Data = ByteString.CopyFrom(payload.ToByteArray())
         };

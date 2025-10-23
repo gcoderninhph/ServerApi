@@ -167,6 +167,16 @@ public class WebSocketClientRegister : IWebSocketClientRegister
         _logger.LogInformation("Registered OnDisconnect handler for WebSocket client");
     }
 
+    public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : class, IMessage
+        where TResponse : class, IMessage, new()
+    {
+        if (_client == null)
+            throw new InvalidOperationException("Client is not connected. Call ConnectAsync first.");
+
+        return await _client.SendRequestAsync<TRequest, TResponse>(id, request, cancellationToken);
+    }
+
     internal void InvokeOnConnect()
     {
         try

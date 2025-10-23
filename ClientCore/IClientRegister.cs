@@ -1,4 +1,5 @@
 using System;
+using Google.Protobuf;
 
 namespace ClientCore;
 
@@ -11,9 +12,18 @@ public interface IClientRegister
     /// Đăng ký handler khi kết nối thành công tới server
     /// </summary>
     void OnConnect(Action handler);
-    
+
     /// <summary>
     /// Đăng ký handler khi ngắt kết nối từ server
     /// </summary>
     void OnDisconnect(Action handler);
+
+
+    /// <summary>
+    /// Gửi một request với việc tương quan requestId và chờ phản hồi với timeout và logic retry.
+    /// Timeout: 20 giây. Khoảng thời gian retry: 200ms.
+    /// </summary>
+    Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
+    where TRequest : class, IMessage
+    where TResponse : class, IMessage, new();
 }

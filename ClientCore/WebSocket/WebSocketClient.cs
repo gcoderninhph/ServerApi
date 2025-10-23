@@ -11,7 +11,7 @@ public class WebSocketClient : IServerApiClient, IDisposable
     private readonly string _serverUri;
     private readonly ILogger<WebSocketClient> _logger;
     private readonly WebSocketClientRegister? _register;
-    private readonly Dictionary<string, TaskCompletionSource<MessageEnvelope>> _pendingRequests = new();
+    private readonly Dictionary<string, TaskCompletionSource<MessageEnvelope>> _pendingRequestsByRequestId = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
@@ -83,27 +83,29 @@ public class WebSocketClient : IServerApiClient, IDisposable
         }
     }
 
-    public async Task<TResponse> SendAsync<TRequest, TResponse>(string commandName, TRequest request, CancellationToken cancellationToken = default)
-        where TRequest : IMessage
-        where TResponse : IMessage, new()
+    /// <summary>
+    /// Send request with requestId correlation. Timeout: 20s, Retry: 200ms
+    /// </summary>
+    public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : class, IMessage
+        where TResponse : class, IMessage, new()
     {
         if (!IsConnected)
             throw new InvalidOperationException("WebSocket is not connected");
 
-        // ✅ FIX: Use command name as envelope.Id instead of GUID
-        // This matches server's expectation for routing to handlers
+        // Generate unique requestId
+        var requestId = Guid.NewGuid().ToString("N");
+
         var envelope = new MessageEnvelope
         {
-            Id = commandName,  // ✅ "Ping", "GetUser", etc. - NOT a GUID!
+            Id = id,  // Command name
+            RequestId = requestId,  // Correlation ID
             Type = MessageType.Request,
             Data = Google.Protobuf.ByteString.CopyFrom(request.ToByteArray())
         };
 
-        // Use command name as correlation key
-        // Note: This means only ONE request per command at a time
-        // TODO: Add proper correlation ID mechanism for concurrent requests
         var tcs = new TaskCompletionSource<MessageEnvelope>();
-        _pendingRequests[commandName] = tcs;
+        _pendingRequestsByRequestId[requestId] = tcs;
 
         try
         {
@@ -112,30 +114,49 @@ public class WebSocketClient : IServerApiClient, IDisposable
             {
                 var buffer = envelope.ToByteArray();
                 await _webSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Binary, true, cancellationToken);
-                _logger.LogDebug("Sent {CommandName} request", commandName);
+                _logger.LogDebug("Sent {CommandName} request with RequestId={RequestId}", id, requestId);
             }
             finally
             {
                 _sendLock.Release();
             }
 
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            // Timeout: 20 seconds, retry check every 200ms
+            var timeout = TimeSpan.FromSeconds(20);
+            var retryInterval = TimeSpan.FromMilliseconds(200);
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-            var responseEnvelope = await tcs.Task.WaitAsync(linkedCts.Token);
-
-            if (responseEnvelope.Type == MessageType.Error)
+            while (stopwatch.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
             {
-                throw new Exception($"Server returned error for command: {commandName}");
+                var delayTask = Task.Delay(retryInterval, cancellationToken);
+                var completedTask = await Task.WhenAny(tcs.Task, delayTask);
+
+                if (completedTask == tcs.Task)
+                {
+                    // Response received
+                    var responseEnvelope = await tcs.Task;
+
+                    if (responseEnvelope.Type == MessageType.Error)
+                    {
+                        // Extract error message from data
+                        var errorMessage = responseEnvelope.Data.ToStringUtf8();
+                        throw new Exception(errorMessage);
+                    }
+
+                    var response = new TResponse();
+                    response.MergeFrom(responseEnvelope.Data.ToByteArray());
+                    return response;
+                }
+
+                // Check again after delay
             }
 
-            var response = new TResponse();
-            response.MergeFrom(responseEnvelope.Data.ToByteArray());
-            return response;
+            // Timeout reached
+            throw new TimeoutException($"Request timeout after {timeout.TotalSeconds}s for command: {id}, RequestId: {requestId}");
         }
         finally
         {
-            _pendingRequests.Remove(commandName);
+            _pendingRequestsByRequestId.Remove(requestId);
         }
     }
 
@@ -160,6 +181,35 @@ public class WebSocketClient : IServerApiClient, IDisposable
             var buffer = envelope.ToByteArray();
             await _webSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Binary, true, cancellationToken);
             _logger.LogDebug("Sent broadcast message for command: {CommandId}", commandId);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Send fire-and-forget request without waiting for response
+    /// </summary>
+    public async Task SendFireAndForgetAsync<TRequest>(string commandName, TRequest request, CancellationToken cancellationToken = default)
+        where TRequest : IMessage
+    {
+        if (!IsConnected)
+            throw new InvalidOperationException("WebSocket is not connected");
+
+        var envelope = new MessageEnvelope
+        {
+            Id = commandName,
+            Type = MessageType.Request,
+            Data = Google.Protobuf.ByteString.CopyFrom(request.ToByteArray())
+        };
+
+        await _sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            var buffer = envelope.ToByteArray();
+            await _webSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Binary, true, cancellationToken);
+            _logger.LogDebug("Sent fire-and-forget request for command: {CommandName}", commandName);
         }
         finally
         {
@@ -207,17 +257,16 @@ public class WebSocketClient : IServerApiClient, IDisposable
                 var envelope = MessageEnvelope.Parser.ParseFrom(messageBytes);
 
                 var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-                _logger.LogInformation("[{Timestamp}] 📥 RECEIVED envelope: Id={Id}, Type={Type}, DataLength={Length}", 
-                    timestamp, envelope.Id, envelope.Type, envelope.Data?.Length ?? 0);
+                _logger.LogInformation("[{Timestamp}] 📥 RECEIVED envelope: Id={Id}, RequestId={RequestId}, Type={Type}, DataLength={Length}", 
+                    timestamp, envelope.Id, envelope.RequestId, envelope.Type, envelope.Data?.Length ?? 0);
 
-                // Match response by command name (envelope.Id)
-                if (_pendingRequests.TryGetValue(envelope.Id, out var tcs))
+                // Try to match by requestId (for SendRequestAsync)
+                if (!string.IsNullOrEmpty(envelope.RequestId) && _pendingRequestsByRequestId.TryGetValue(envelope.RequestId, out var tcsByRequestId))
                 {
-                    _logger.LogInformation("[{Timestamp}] ✅ Matched pending request", timestamp);
+                    _logger.LogInformation("[{Timestamp}] ✅ Matched pending request by RequestId", timestamp);
                     
-                    // Run SetResult on ThreadPool to avoid blocking receive loop
                     var envelopeCopy = envelope;
-                    _ = Task.Run(() => tcs.SetResult(envelopeCopy));
+                    _ = Task.Run(() => tcsByRequestId.SetResult(envelopeCopy));
                     
                     _logger.LogInformation("[{Timestamp}] 🔄 Scheduled pending request completion, continuing loop...", timestamp);
                 }

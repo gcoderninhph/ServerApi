@@ -23,7 +23,7 @@ internal class Requester<TRequest, TResponse> : IRequester<TRequest>
     }
 
     /// <summary>
-    /// Gửi request đến server
+    /// Gửi request đến server (fire-and-forget - không chờ response)
     /// </summary>
     public async Task SendAsync(TRequest requestBody, CancellationToken cancellationToken = default)
     {
@@ -38,7 +38,7 @@ internal class Requester<TRequest, TResponse> : IRequester<TRequest>
             throw new InvalidOperationException($"Request body must implement IMessage (Protocol Buffers)");
         }
 
-        // Gửi request đến server thông qua client, response sẽ được handle bởi registered handler  
-        var _ = await _client.SendAsync<TRequest, TResponse>(_commandId, requestBody, cancellationToken);
+        // Gửi request và KHÔNG CHỜ response - response sẽ được handle bởi registered handler
+        await _client.SendFireAndForgetAsync(_commandId, requestBody, cancellationToken);
     }
 }
