@@ -64,7 +64,7 @@ public class TcpStreamClient : IServerApiClient, IDisposable
     }
 
     /// <summary>
-    /// Send request with requestId correlation. Timeout: 20s, Retry: 200ms
+    /// Send request with requestId correlation. Timeout: 20s
     /// </summary>
     public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
         where TRequest : class, IMessage
@@ -106,38 +106,30 @@ public class TcpStreamClient : IServerApiClient, IDisposable
                 _sendLock.Release();
             }
 
-            // Timeout: 20 seconds, retry check every 200ms
-            var timeout = TimeSpan.FromSeconds(20);
-            var retryInterval = TimeSpan.FromMilliseconds(200);
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            // Wait for response with timeout (20 seconds)
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(20));
 
-            while (stopwatch.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
+            try
             {
-                var delayTask = Task.Delay(retryInterval, cancellationToken);
-                var completedTask = await Task.WhenAny(tcs.Task, delayTask);
+                var responseEnvelope = await tcs.Task.WaitAsync(timeoutCts.Token);
 
-                if (completedTask == tcs.Task)
+                if (responseEnvelope.Type == MessageType.Error)
                 {
-                    // Response received
-                    var responseEnvelope = await tcs.Task;
-
-                    if (responseEnvelope.Type == MessageType.Error)
-                    {
-                        // Extract error message from data
-                        var errorMessage = responseEnvelope.Data.ToStringUtf8();
-                        throw new Exception(errorMessage);
-                    }
-
-                    var response = new TResponse();
-                    response.MergeFrom(responseEnvelope.Data.ToByteArray());
-                    return response;
+                    // Extract error message from data
+                    var errorMessage = responseEnvelope.Data.ToStringUtf8();
+                    throw new Exception(errorMessage);
                 }
 
-                // Check again after delay
+                var response = new TResponse();
+                response.MergeFrom(responseEnvelope.Data.ToByteArray());
+                return response;
             }
-
-            // Timeout reached
-            throw new TimeoutException($"Request timeout after {timeout.TotalSeconds}s for command: {id}, RequestId: {requestId}");
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // Timeout occurred
+                throw new TimeoutException($"Request timeout after 20s for command: {id}, RequestId: {requestId}");
+            }
         }
         finally
         {

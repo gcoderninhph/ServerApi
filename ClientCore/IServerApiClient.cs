@@ -10,8 +10,8 @@ internal interface IServerApiClient
     Task DisconnectAsync();
     
     /// <summary>
-    /// Send a request with requestId correlation and wait for response with timeout and retry logic.
-    /// Timeout: 20 seconds. Retry interval: 200ms.
+    /// Send a request with requestId correlation and wait for response with timeout.
+    /// Timeout: 20 seconds.
     /// </summary>
     Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default) 
         where TRequest : class, IMessage 

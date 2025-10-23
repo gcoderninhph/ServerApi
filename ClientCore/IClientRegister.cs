@@ -20,8 +20,8 @@ public interface IClientRegister
 
 
     /// <summary>
-    /// Gửi một request với việc tương quan requestId và chờ phản hồi với timeout và logic retry.
-    /// Timeout: 20 giây. Khoảng thời gian retry: 200ms.
+    /// Gửi một request với việc tương quan requestId và chờ phản hồi với timeout.
+    /// Timeout: 20 giây.
     /// </summary>
     Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
     where TRequest : class, IMessage
