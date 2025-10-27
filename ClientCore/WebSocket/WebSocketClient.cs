@@ -15,6 +15,8 @@ public class WebSocketClient : IServerApiClient, IDisposable
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
+    private bool _autoReconnectEnabled = false;
+    private bool _isDisposing = false;
 
     public bool IsConnected => _webSocket.State == WebSocketState.Open;
 
@@ -81,6 +83,15 @@ public class WebSocketClient : IServerApiClient, IDisposable
             // Invoke OnDisconnect callback
             _register?.InvokeOnDisconnect();
         }
+    }
+
+    /// <summary>
+    /// Enable/disable auto reconnect when connection lost
+    /// </summary>
+    public void EnableAutoReconnect(bool enable)
+    {
+        _autoReconnectEnabled = enable;
+        _logger.LogInformation("Auto reconnect {Status}", enable ? "enabled" : "disabled");
     }
 
     /// <summary>
@@ -298,6 +309,13 @@ public class WebSocketClient : IServerApiClient, IDisposable
             
             // Invoke OnDisconnect on error
             _register?.InvokeOnDisconnect();
+
+            // Auto reconnect if enabled
+            if (_autoReconnectEnabled && !_isDisposing && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Connection lost, attempting to reconnect...");
+                _ = Task.Run(async () => await ReconnectWithBackoffAsync());
+            }
         }
         finally
         {
@@ -305,8 +323,49 @@ public class WebSocketClient : IServerApiClient, IDisposable
         }
     }
 
+    private async Task ReconnectWithBackoffAsync()
+    {
+        var retryCount = 0;
+        var maxRetries = 10;
+        var baseDelay = TimeSpan.FromSeconds(1);
+
+        while (_autoReconnectEnabled && !_isDisposing && retryCount < maxRetries)
+        {
+            retryCount++;
+            var delay = TimeSpan.FromSeconds(Math.Min(baseDelay.TotalSeconds * Math.Pow(2, retryCount - 1), 60));
+
+            _logger.LogInformation("Reconnect attempt {Retry}/{MaxRetries} after {Delay}s...", retryCount, maxRetries, delay.TotalSeconds);
+            await Task.Delay(delay);
+
+            try
+            {
+                // Create new WebSocket instance
+                var fieldInfo = typeof(WebSocketClient).GetField("_webSocket", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (fieldInfo != null)
+                {
+                    var oldWebSocket = (ClientWebSocket)fieldInfo.GetValue(this)!;
+                    oldWebSocket.Dispose();
+                    
+                    var newWebSocket = new ClientWebSocket();
+                    fieldInfo.SetValue(this, newWebSocket);
+                }
+
+                await ConnectAsync();
+                _logger.LogInformation("✅ Reconnected successfully");
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconnect attempt {Retry} failed", retryCount);
+            }
+        }
+
+        _logger.LogError("Failed to reconnect after {MaxRetries} attempts", maxRetries);
+    }
+
     public void Dispose()
     {
+        _isDisposing = true;
         _receiveCts?.Cancel();
         _receiveTask?.Wait(TimeSpan.FromSeconds(5));
         _webSocket.Dispose();

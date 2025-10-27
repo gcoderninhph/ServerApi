@@ -18,6 +18,10 @@ public interface IClientRegister
     /// </summary>
     void OnDisconnect(Action handler);
 
+    /// <summary>
+    /// Bật/tắt tính năng tự động kết nối lại khi mất kết nối
+    /// </summary>
+    void AutoReconnect(bool enable);
 
     /// <summary>
     /// Gửi một request với việc tương quan requestId và chờ phản hồi với timeout.

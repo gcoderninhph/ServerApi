@@ -167,6 +167,17 @@ public class WebSocketClientRegister : IWebSocketClientRegister
         _logger.LogInformation("Registered OnDisconnect handler for WebSocket client");
     }
 
+    public void AutoReconnect(bool enable)
+    {
+        if (_client == null)
+        {
+            _logger.LogWarning("Cannot enable auto-reconnect: client is not initialized");
+            return;
+        }
+
+        _client.EnableAutoReconnect(enable);
+    }
+
     public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
         where TRequest : class, IMessage
         where TResponse : class, IMessage, new()

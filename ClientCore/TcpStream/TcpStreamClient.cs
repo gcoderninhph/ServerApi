@@ -17,6 +17,8 @@ public class TcpStreamClient : IServerApiClient, IDisposable
     private NetworkStream? _stream;
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
+    private bool _autoReconnectEnabled = false;
+    private bool _isDisposing = false;
 
     public bool IsConnected => _tcpClient.Connected;
 
@@ -61,6 +63,15 @@ public class TcpStreamClient : IServerApiClient, IDisposable
         _register?.InvokeOnDisconnect();
         
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Enable/disable auto reconnect when connection lost
+    /// </summary>
+    public void EnableAutoReconnect(bool enable)
+    {
+        _autoReconnectEnabled = enable;
+        _logger.LogInformation("Auto reconnect {Status}", enable ? "enabled" : "disabled");
     }
 
     /// <summary>
@@ -285,11 +296,59 @@ public class TcpStreamClient : IServerApiClient, IDisposable
             
             // Invoke OnDisconnect on error
             _register?.InvokeOnDisconnect();
+
+            // Auto reconnect if enabled
+            if (_autoReconnectEnabled && !_isDisposing && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Connection lost, attempting to reconnect...");
+                _ = Task.Run(async () => await ReconnectWithBackoffAsync());
+            }
         }
+    }
+
+    private async Task ReconnectWithBackoffAsync()
+    {
+        var retryCount = 0;
+        var maxRetries = 10;
+        var baseDelay = TimeSpan.FromSeconds(1);
+
+        while (_autoReconnectEnabled && !_isDisposing && retryCount < maxRetries)
+        {
+            retryCount++;
+            var delay = TimeSpan.FromSeconds(Math.Min(baseDelay.TotalSeconds * Math.Pow(2, retryCount - 1), 60));
+
+            _logger.LogInformation("Reconnect attempt {Retry}/{MaxRetries} after {Delay}s...", retryCount, maxRetries, delay.TotalSeconds);
+            await Task.Delay(delay);
+
+            try
+            {
+                // Create new TcpClient instance
+                var fieldInfo = typeof(TcpStreamClient).GetField("_tcpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (fieldInfo != null)
+                {
+                    var oldClient = (TcpClient)fieldInfo.GetValue(this)!;
+                    oldClient.Dispose();
+                    
+                    var newClient = new TcpClient();
+                    fieldInfo.SetValue(this, newClient);
+                }
+
+                await ConnectAsync();
+                _logger.LogInformation("✅ Reconnected successfully");
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconnect attempt {Retry} failed", retryCount);
+            }
+        }
+
+        _logger.LogError("Failed to reconnect after {MaxRetries} attempts", maxRetries);
     }
 
     public void Dispose()
     {
+        _isDisposing = true;
         _receiveCts?.Cancel();
         _receiveTask?.Wait(TimeSpan.FromSeconds(5));
         _stream?.Dispose();
