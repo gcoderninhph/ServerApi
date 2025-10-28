@@ -21,6 +21,7 @@ internal class TcpStreamConnection
     private readonly ILogger _logger;
     private readonly ServerApiRegistrar _registrar;
     private readonly int _bufferSize;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private Context? _context;
 
     public TcpStreamConnection(
@@ -70,6 +71,7 @@ internal class TcpStreamConnection
         {
             _stream.Close();
             _client.Close();
+            _sendLock.Dispose();
         }
     }
 
@@ -95,14 +97,23 @@ internal class TcpStreamConnection
         // Create responder that can send at any time, include requestId for correlation
         var responder = new Responder<object>(env => SendEnvelopeAsync(env), commandId, string.IsNullOrEmpty(requestId) ? null : requestId);
 
-        // Try to find and invoke handler
-        var requestBytes = envelope.Data.ToByteArray();
-        var handled = await _registrar.TryInvokeTcpStreamAsync(commandId, _context, requestBytes, responder);
-        
-        if (!handled)
+        try
         {
-            _logger.LogWarning("No handler registered for command {CommandId}.", commandId);
-            var errorEnvelope = MessageEnvelopeFactory.CreateError(envelope, $"Command '{commandId}' not supported");
+            // Try to find and invoke handler
+            var requestBytes = envelope.Data.ToByteArray();
+            var handled = await _registrar.TryInvokeTcpStreamAsync(commandId, _context, requestBytes, responder);
+            
+            if (!handled)
+            {
+                _logger.LogWarning("No handler registered for command {CommandId}.", commandId);
+                var errorEnvelope = MessageEnvelopeFactory.CreateError(envelope, $"Command '{commandId}' not supported");
+                await SendEnvelopeAsync(errorEnvelope, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Handler exception for command {CommandId} on connection {ConnectionId}.", commandId, _connectionId);
+            var errorEnvelope = MessageEnvelopeFactory.CreateError(envelope, $"Handler error: {ex.Message}");
             await SendEnvelopeAsync(errorEnvelope, cancellationToken);
         }
     }
@@ -149,9 +160,18 @@ internal class TcpStreamConnection
         var bytes = envelope.ToByteArray();
         var lengthBytes = BitConverter.GetBytes(bytes.Length);
 
-        // Write length prefix + message
-        await _stream.WriteAsync(lengthBytes, cancellationToken);
-        await _stream.WriteAsync(bytes, cancellationToken);
-        await _stream.FlushAsync(cancellationToken);
+        // Use lock to prevent race condition when multiple handlers send concurrently
+        await _sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            // Write length prefix + message
+            await _stream.WriteAsync(lengthBytes, cancellationToken);
+            await _stream.WriteAsync(bytes, cancellationToken);
+            await _stream.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 }

@@ -7,20 +7,21 @@ namespace ClientCore.TcpStream;
 
 public class TcpStreamClient : IServerApiClient, IDisposable
 {
-    private readonly TcpClient _tcpClient;
+    private TcpClient _tcpClient;  // Removed readonly for reconnect support
     private readonly string _serverHost;
     private readonly int _serverPort;
     private readonly ILogger<TcpStreamClient> _logger;
     private readonly TcpStreamClientRegister? _register;
     private readonly Dictionary<string, TaskCompletionSource<MessageEnvelope>> _pendingRequestsByRequestId = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly object _reconnectLock = new();
     private NetworkStream? _stream;
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
     private bool _autoReconnectEnabled = false;
     private bool _isDisposing = false;
 
-    public bool IsConnected => _tcpClient.Connected;
+    public bool IsConnected => _tcpClient.Connected && _stream != null && !_isDisposing;
 
     public TcpStreamClient(string serverHost, int serverPort, ILogger<TcpStreamClient> logger, TcpStreamClientRegister? register = null)
     {
@@ -33,9 +34,16 @@ public class TcpStreamClient : IServerApiClient, IDisposable
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
+        
         try
         {
-            await _tcpClient.ConnectAsync(_serverHost, _serverPort, cancellationToken);
+            // Add connection timeout (10 seconds)
+            timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            
+            await _tcpClient.ConnectAsync(_serverHost, _serverPort, linkedCts.Token);
             _stream = _tcpClient.GetStream();
             _logger.LogInformation("Connected to TCP server: {Host}:{Port}", _serverHost, _serverPort);
 
@@ -45,10 +53,20 @@ public class TcpStreamClient : IServerApiClient, IDisposable
             _receiveCts = new CancellationTokenSource();
             _receiveTask = Task.Run(() => ReceiveLoopAsync(_receiveCts.Token), _receiveCts.Token);
         }
+        catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError("Connection timeout after 10 seconds");
+            throw new TimeoutException("Connection timeout after 10 seconds");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to connect to TCP server");
             throw;
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
+            linkedCts?.Dispose();
         }
     }
 
@@ -226,16 +244,21 @@ public class TcpStreamClient : IServerApiClient, IDisposable
         {
             while (!cancellationToken.IsCancellationRequested && _tcpClient.Connected)
             {
-                // Read length prefix
-                var bytesRead = await _stream.ReadAsync(lengthBuffer, 0, 4, cancellationToken);
-                if (bytesRead != 4)
+                // Read length prefix (4 bytes) - loop to ensure we read all 4 bytes
+                var totalRead = 0;
+                while (totalRead < 4)
                 {
-                    _logger.LogWarning("Connection closed by server");
-                    break;
+                    var bytesRead = await _stream.ReadAsync(lengthBuffer, totalRead, 4 - totalRead, cancellationToken);
+                    if (bytesRead == 0)
+                    {
+                        _logger.LogWarning("Connection closed by server");
+                        return;
+                    }
+                    totalRead += bytesRead;
                 }
 
                 var messageLength = BitConverter.ToInt32(lengthBuffer, 0);
-                if (messageLength <= 0 || messageLength > 1024 * 1024) // 1MB max
+                if (messageLength <= 0 || messageLength > 10 * 1024 * 1024) // 10MB max (match server)
                 {
                     _logger.LogError("Invalid message length: {Length}", messageLength);
                     break;
@@ -243,10 +266,10 @@ public class TcpStreamClient : IServerApiClient, IDisposable
 
                 // Read message
                 var messageBuffer = new byte[messageLength];
-                var totalRead = 0;
+                totalRead = 0;
                 while (totalRead < messageLength)
                 {
-                    bytesRead = await _stream.ReadAsync(messageBuffer, totalRead, messageLength - totalRead, cancellationToken);
+                    var bytesRead = await _stream.ReadAsync(messageBuffer, totalRead, messageLength - totalRead, cancellationToken);
                     if (bytesRead == 0)
                     {
                         _logger.LogWarning("Connection closed while reading message");
@@ -287,12 +310,26 @@ public class TcpStreamClient : IServerApiClient, IDisposable
         {
             _logger.LogDebug("Receive loop cancelled");
             
+            // Cancel all pending requests
+            foreach (var kvp in _pendingRequestsByRequestId)
+            {
+                kvp.Value.TrySetException(new OperationCanceledException("Connection closed"));
+            }
+            _pendingRequestsByRequestId.Clear();
+            
             // Invoke OnDisconnect on cancellation
             _register?.InvokeOnDisconnect();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in receive loop");
+            
+            // Cancel all pending requests with connection error
+            foreach (var kvp in _pendingRequestsByRequestId)
+            {
+                kvp.Value.TrySetException(new IOException("Connection lost", ex));
+            }
+            _pendingRequestsByRequestId.Clear();
             
             // Invoke OnDisconnect on error
             _register?.InvokeOnDisconnect();
@@ -322,15 +359,13 @@ public class TcpStreamClient : IServerApiClient, IDisposable
 
             try
             {
-                // Create new TcpClient instance
-                var fieldInfo = typeof(TcpStreamClient).GetField("_tcpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (fieldInfo != null)
+                // Use lock to prevent race with Dispose
+                lock (_reconnectLock)
                 {
-                    var oldClient = (TcpClient)fieldInfo.GetValue(this)!;
-                    oldClient.Dispose();
+                    if (_isDisposing) return;  // Check again inside lock
                     
-                    var newClient = new TcpClient();
-                    fieldInfo.SetValue(this, newClient);
+                    _tcpClient.Dispose();
+                    _tcpClient = new TcpClient();
                 }
 
                 await ConnectAsync();
@@ -348,11 +383,26 @@ public class TcpStreamClient : IServerApiClient, IDisposable
 
     public void Dispose()
     {
-        _isDisposing = true;
+        lock (_reconnectLock)
+        {
+            _isDisposing = true;
+        }
+        
         _receiveCts?.Cancel();
-        _receiveTask?.Wait(TimeSpan.FromSeconds(5));
-        _stream?.Dispose();
-        _tcpClient.Dispose();
+        
+        // Don't wait for receive task - close stream to unblock any pending reads
+        try
+        {
+            _stream?.Close();
+        }
+        catch { }
+        
+        try
+        {
+            _tcpClient.Close();
+        }
+        catch { }
+        
         _receiveCts?.Dispose();
         _sendLock.Dispose();
     }
