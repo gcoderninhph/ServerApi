@@ -364,12 +364,20 @@ public class TcpStreamClient : IServerApiClient, IDisposable
                 {
                     if (_isDisposing) return;  // Check again inside lock
                     
+                    // Dispose old CancellationTokenSource
+                    _receiveCts?.Dispose();
+                    
                     _tcpClient.Dispose();
                     _tcpClient = new TcpClient();
                 }
 
                 await ConnectAsync();
                 _logger.LogInformation("✅ Reconnected successfully");
+                
+                // Start receive loop after successful reconnect
+                _receiveCts = new CancellationTokenSource();
+                _ = Task.Run(async () => await ReceiveLoopAsync(_receiveCts.Token));
+                
                 return;
             }
             catch (Exception ex)

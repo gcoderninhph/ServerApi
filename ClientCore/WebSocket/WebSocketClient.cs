@@ -346,12 +346,20 @@ public class WebSocketClient : IServerApiClient, IDisposable
                     var oldWebSocket = (ClientWebSocket)fieldInfo.GetValue(this)!;
                     oldWebSocket.Dispose();
                     
+                    // Dispose old CancellationTokenSource
+                    _receiveCts?.Dispose();
+                    
                     var newWebSocket = new ClientWebSocket();
                     fieldInfo.SetValue(this, newWebSocket);
                 }
 
                 await ConnectAsync();
                 _logger.LogInformation("✅ Reconnected successfully");
+                
+                // Start receive loop after successful reconnect
+                _receiveCts = new CancellationTokenSource();
+                _receiveTask = Task.Run(async () => await ReceiveLoopAsync(_receiveCts.Token));
+                
                 return;
             }
             catch (Exception ex)
