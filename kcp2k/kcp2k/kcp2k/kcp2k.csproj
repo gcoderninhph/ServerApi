@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>kcp2k</RootNamespace>
+    <AssemblyName>kcp2k</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include all C# files from highlevel folder -->
+    <Compile Include="highlevel\*.cs" />
+    
+    <!-- Include all C# files from kcp folder -->
+    <Compile Include="kcp\*.cs" />
+  </ItemGroup>
+
+</Project>
