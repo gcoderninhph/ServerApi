@@ -13,7 +13,8 @@ namespace Asp.net.Services;
 public enum TransportType
 {
     WebSocket,
-    TcpStream
+    TcpStream,
+    Kcp
 }
 
 public class ResponderInfo
@@ -27,6 +28,7 @@ public class RegisterServices
     // Chia rõ responders theo transport type
     private readonly Dictionary<string, ResponderInfo> _webSocketResponders = new();
     private readonly Dictionary<string, ResponderInfo> _tcpResponders = new();
+    private readonly Dictionary<string, ResponderInfo> _kcpResponders = new();
     private readonly object _respondersLock = new object();
     
     private readonly MessageSnapshotStore _snapshotStore;
@@ -91,11 +93,17 @@ public class RegisterServices
                 _logger.LogInformation("📝 Saved WebSocket responder for {ConnectionId} (Total WS: {Count})", 
                     context.ConnectionId, _webSocketResponders.Count);
             }
-            else
+            else if (transportType == TransportType.TcpStream)
             {
                 _tcpResponders[context.ConnectionId] = responderInfo;
                 _logger.LogInformation("📝 Saved TCP responder for {ConnectionId} (Total TCP: {Count})", 
                     context.ConnectionId, _tcpResponders.Count);
+            }
+            else if (transportType == TransportType.Kcp)
+            {
+                _kcpResponders[context.ConnectionId] = responderInfo;
+                _logger.LogInformation("📝 Saved KCP responder for {ConnectionId} (Total KCP: {Count})", 
+                    context.ConnectionId, _kcpResponders.Count);
             }
         }
         
@@ -111,6 +119,10 @@ public class RegisterServices
         {
             return TransportType.WebSocket;
         }
+        else if (context.TransportType == "Kcp")
+        {
+            return TransportType.Kcp;
+        }
         return TransportType.TcpStream;
     }
 
@@ -124,10 +136,12 @@ public class RegisterServices
         var message = new SimpleMessage { Message = text };
         int wsCount = 0;
         int tcpCount = 0;
+        int kcpCount = 0;
         
         // Xác định Dictionary nào cần gửi
         var shouldSendWebSocket = !transportType.HasValue || transportType.Value == TransportType.WebSocket;
         var shouldSendTcp = !transportType.HasValue || transportType.Value == TransportType.TcpStream;
+        var shouldSendKcp = !transportType.HasValue || transportType.Value == TransportType.Kcp;
 
         // Gửi qua WebSocket
         if (shouldSendWebSocket)
@@ -175,17 +189,40 @@ public class RegisterServices
             }
         }
 
-        var sentCount = wsCount + tcpCount;
+        // Gửi qua KCP
+        if (shouldSendKcp)
+        {
+            Dictionary<string, ResponderInfo> kcpSnapshot;
+            lock (_respondersLock)
+            {
+                kcpSnapshot = new Dictionary<string, ResponderInfo>(_kcpResponders);
+            }
+
+            foreach (var kvp in kcpSnapshot)
+            {
+                try
+                {
+                    await kvp.Value.Responder.SendAsync(message);
+                    kcpCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send to KCP client {ConnectionId}", kvp.Key);
+                }
+            }
+        }
+
+        var sentCount = wsCount + tcpCount + kcpCount;
         var transportFilter = transportType.HasValue ? transportType.Value.ToString() : "ALL";
         
-        _logger.LogInformation("📤 Sent to {Total} clients: WS={WS}, TCP={TCP}, Filter={Filter}", 
-            sentCount, wsCount, tcpCount, transportFilter);
+        _logger.LogInformation("📤 Sent to {Total} clients: WS={WS}, TCP={TCP}, KCP={KCP}, Filter={Filter}", 
+            sentCount, wsCount, tcpCount, kcpCount, transportFilter);
 
         // Lưu snapshot
         var sentSnapshot = new MessageSnapshot
         {
             Command = "message.test",
-            Content = $"[{transportFilter}] {text} → WS:{wsCount} TCP:{tcpCount}",
+            Content = $"[{transportFilter}] {text} → WS:{wsCount} TCP:{tcpCount} KCP:{kcpCount}",
             Direction = MessageDirection.Sent,
             Status = MessageStatus.Sent
         };

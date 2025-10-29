@@ -38,6 +38,7 @@ builder.Services.AddSingleton<MessageSnapshotStore>();
 // Add ClientCore services
 builder.Services.AddClientApiWebSocket();
 builder.Services.AddClientApiTcpStream();
+builder.Services.AddClientApiKcp();
 
 // Add RegisterServices
 builder.Services.AddSingleton<RegisterServices>();

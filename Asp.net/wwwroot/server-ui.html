@@ -183,12 +183,13 @@
         <div class="controls">
             <input type="text" id="messageInput" placeholder="Enter message to send to clients...">
             <select id="transportSelector">
-                <option value="">🌐 All Clients (WebSocket + TCP)</option>
+                <option value="">🌐 All Clients (WebSocket + TCP + KCP)</option>
                 <option value="0">🔌 WebSocket Only</option>
                 <option value="1">📡 TCP Stream Only</option>
+                <option value="2">⚡ KCP Only</option>
             </select>
             <button class="success" onclick="sendMessageToAll()">📤 Send Message</button>
-            <button class="danger" onclick="clearSnapshots()">�️ Clear All</button>
+            <button class="danger" onclick="clearSnapshots()">🗑️ Clear All</button>
             <button onclick="refreshSnapshots()">🔄 Refresh</button>
         </div>
 

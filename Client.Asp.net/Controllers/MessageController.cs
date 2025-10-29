@@ -19,7 +19,7 @@ public class MessageController : ControllerBase
     }
 
     /// <summary>
-    /// Gửi message qua transport được chọn (WebSocket hoặc TCP)
+    /// Gửi message qua transport được chọn (WebSocket, TCP, hoặc KCP)
     /// </summary>
     [HttpPost("send")]
     public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
@@ -31,24 +31,41 @@ public class MessageController : ControllerBase
 
         try
         {
-            var transportName = request.TransportType == 0 ? "WebSocket" : "TCP";
-            _logger.LogInformation($"📤 Sending message via {transportName}");
-
+            string transportName;
+            
             if (request.TransportType == 0) // WebSocket
             {
+                transportName = "WebSocket";
                 if (!_registerServices.IsWebSocketConnected)
                 {
                     return BadRequest(new { error = "WebSocket is not connected" });
                 }
+                _logger.LogInformation($"📤 Sending message via {transportName}");
                 await _registerServices.SendWebSocketMessageAsync(request.Message);
             }
-            else // TCP
+            else if (request.TransportType == 1) // TCP
             {
+                transportName = "TCP";
                 if (!_registerServices.IsTcpConnected)
                 {
                     return BadRequest(new { error = "TCP is not connected" });
                 }
+                _logger.LogInformation($"📤 Sending message via {transportName}");
                 await _registerServices.SendTcpMessageAsync(request.Message);
+            }
+            else if (request.TransportType == 2) // KCP
+            {
+                transportName = "KCP";
+                if (!_registerServices.IsKcpConnected)
+                {
+                    return BadRequest(new { error = "KCP is not connected" });
+                }
+                _logger.LogInformation($"📤 Sending message via {transportName}");
+                await _registerServices.SendKcpMessageAsync(request.Message);
+            }
+            else
+            {
+                return BadRequest(new { error = $"Invalid transport type: {request.TransportType}. Use 0=WebSocket, 1=TCP, 2=KCP" });
             }
 
             return Ok(new
@@ -82,6 +99,11 @@ public class MessageController : ControllerBase
             {
                 connected = _registerServices.IsTcpConnected,
                 status = _registerServices.IsTcpConnected ? "Connected" : "Disconnected"
+            },
+            kcp = new
+            {
+                connected = _registerServices.IsKcpConnected,
+                status = _registerServices.IsKcpConnected ? "Connected" : "Disconnected"
             }
         });
     }
@@ -90,5 +112,5 @@ public class MessageController : ControllerBase
 public class SendMessageRequest
 {
     public string Message { get; set; } = string.Empty;
-    public int TransportType { get; set; } // 0 = WebSocket, 1 = TCP
+    public int TransportType { get; set; } // 0 = WebSocket, 1 = TCP, 2 = KCP
 }

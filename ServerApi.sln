@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientCore", "ClientCore\Cl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client.Asp.net", "Client.Asp.net\Client.Asp.net.csproj", "{7317A1E9-3E28-4D1D-9628-F329DF71C40C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "kcp2k", "kcp2k\kcp2k\kcp2k\kcp2k.csproj", "{8B5E8D9F-1234-4567-89AB-CDEF01234567}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,18 @@ Global
 		{7317A1E9-3E28-4D1D-9628-F329DF71C40C}.Release|x64.Build.0 = Release|Any CPU
 		{7317A1E9-3E28-4D1D-9628-F329DF71C40C}.Release|x86.ActiveCfg = Release|Any CPU
 		{7317A1E9-3E28-4D1D-9628-F329DF71C40C}.Release|x86.Build.0 = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|x64.Build.0 = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Debug|x86.Build.0 = Debug|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|x64.ActiveCfg = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|x64.Build.0 = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|x86.ActiveCfg = Release|Any CPU
+		{8B5E8D9F-1234-4567-89AB-CDEF01234567}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

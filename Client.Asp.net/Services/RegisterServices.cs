@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ClientCore;
 using ClientCore.WebSocket;
 using ClientCore.TcpStream;
+using ClientCore.Kcp;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.SignalR;
 
@@ -21,6 +22,7 @@ public class RegisterServices
 {
     private readonly IWebSocketClientRegister _websocketRegister;
     private readonly ITcpStreamClientRegister _tcpRegister;
+    private readonly IKcpClientRegister _kcpRegister;
     private readonly ILogger<RegisterServices> _logger;
     private readonly MessageSnapshotStore _snapshotStore;
     private readonly IHubContext<UiHub> _hubContext;
@@ -28,24 +30,30 @@ public class RegisterServices
     // Requesters để gửi messages
     private IRequester<PingRequest>? _wsPingRequester;
     private IRequester<PingRequest>? _tcpPingRequester;
+    private IRequester<PingRequest>? _kcpPingRequester;
     private IRequester<SimpleMessage>? _wsMessageRequester;
     private IRequester<SimpleMessage>? _tcpMessageRequester;
+    private IRequester<SimpleMessage>? _kcpMessageRequester;
 
     // Properties để truy cập requesters từ bên ngoài
     public IRequester<PingRequest>? WsPingRequester => _wsPingRequester;
     public IRequester<PingRequest>? TcpPingRequester => _tcpPingRequester;
+    public IRequester<PingRequest>? KcpPingRequester => _kcpPingRequester;
     public IRequester<SimpleMessage>? WsMessageRequester => _wsMessageRequester;
     public IRequester<SimpleMessage>? TcpMessageRequester => _tcpMessageRequester;
+    public IRequester<SimpleMessage>? KcpMessageRequester => _kcpMessageRequester;
 
     public RegisterServices(
         IWebSocketClientRegister websocketRegister,
         ITcpStreamClientRegister tcpRegister,
+        IKcpClientRegister kcpRegister,
         ILogger<RegisterServices> logger,
         MessageSnapshotStore snapshotStore,
         IHubContext<UiHub> hubContext)
     {
         _websocketRegister = websocketRegister;
         _tcpRegister = tcpRegister;
+        _kcpRegister = kcpRegister;
         _logger = logger;
         _snapshotStore = snapshotStore;
         _hubContext = hubContext;
@@ -68,7 +76,12 @@ public class RegisterServices
         _tcpRegister.OnConnect(OnTcpConnect);
         _tcpRegister.OnDisconnect(OnTcpDisconnect);
 
-        _logger.LogInformation("Lifecycle events registered");
+        // KCP lifecycle - không có context parameter
+        _kcpRegister.AutoReconnect(true); // Bật auto-reconnect cho KCP
+        _kcpRegister.OnConnect(OnKcpConnect);
+        _kcpRegister.OnDisconnect(OnKcpDisconnect);
+
+        _logger.LogInformation("Lifecycle events registered (WebSocket + TCP + KCP)");
     }
 
     private void RegisterRequester()
@@ -83,7 +96,10 @@ public class RegisterServices
         _tcpPingRequester = _tcpRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
         _tcpMessageRequester = _tcpRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
         
-        _logger.LogInformation("✅ All handlers registered (will work across reconnects)");
+        _kcpPingRequester = _kcpRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
+        _kcpMessageRequester = _kcpRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
+        
+        _logger.LogInformation("✅ All handlers registered (WebSocket + TCP + KCP, will work across reconnects)");
     }
 
     // Track transport type cho handlers
@@ -199,6 +215,29 @@ public class RegisterServices
 
     #endregion
 
+    #region KCP Lifecycle
+
+    private void OnKcpConnect()
+    {
+        _logger.LogInformation("⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡");
+        _logger.LogInformation("✅ KCP ClientCore CONNECTED!");
+        _logger.LogInformation("⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡");
+
+        // Set current transport
+        _currentTransport = "KCP";
+        
+        // ✅ KHÔNG CẦN re-register - Requester tự động lấy client mới
+    }
+
+    private void OnKcpDisconnect()
+    {
+        _logger.LogWarning("🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴");
+        _logger.LogWarning("❌ KCP ClientCore DISCONNECTED");
+        _logger.LogWarning("🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴");
+    }
+
+    #endregion
+
     #region Public Methods
 
     /// <summary>
@@ -267,16 +306,50 @@ public class RegisterServices
     }
 
     /// <summary>
+    /// Kết nối KCP
+    /// </summary>
+    public async Task ConnectKcpAsync(
+        string host = "localhost",
+        ushort port = 5004,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogInformation("Connecting to KCP: {Host}:{Port}", host, port);
+            await _kcpRegister.ConnectAsync(host, port, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to connect KCP");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Ngắt kết nối KCP
+    /// </summary>
+    public async Task DisconnectKcpAsync()
+    {
+        if (_kcpRegister.IsConnected)
+        {
+            _logger.LogInformation("Disconnecting KCP...");
+            await _kcpRegister.DisconnectAsync();
+        }
+    }
+
+    /// <summary>
     /// Kiểm tra trạng thái kết nối
     /// </summary>
     public bool IsWebSocketConnected => _websocketRegister.IsConnected;
     public bool IsTcpConnected => _tcpRegister.IsConnected;
+    public bool IsKcpConnected => _kcpRegister.IsConnected;
 
     /// <summary>
     /// Kiểm tra requesters đã sẵn sàng chưa
     /// </summary>
     public bool IsWebSocketReady => _wsPingRequester != null && _wsMessageRequester != null;
     public bool IsTcpReady => _tcpPingRequester != null && _tcpMessageRequester != null;
+    public bool IsKcpReady => _kcpPingRequester != null && _kcpMessageRequester != null;
 
     #endregion
 
@@ -395,6 +468,66 @@ public class RegisterServices
         {
             Command = "message.test",
             Content = $"[TCP] {message}",
+            Direction = MessageDirection.Sent,
+            Status = MessageStatus.Delivered  // Đặt luôn Delivered vì đã gửi thành công
+        };
+        _snapshotStore.AddOrUpdate(sentSnapshot);
+        await _hubContext.Clients.All.SendAsync("SnapshotUpdated", sentSnapshot);
+    }
+
+    /// <summary>
+    /// Gửi PingRequest qua KCP
+    /// </summary>
+    public async Task SendKcpPingAsync(string message, CancellationToken cancellationToken = default)
+    {
+        if (!_kcpRegister.IsConnected)
+        {
+            throw new InvalidOperationException("KCP is not connected");
+        }
+
+        if (_kcpPingRequester == null)
+        {
+            throw new InvalidOperationException("KCP Ping requester chưa được khởi tạo. Vui lòng đợi connection hoàn tất.");
+        }
+
+        var request = new PingRequest
+        {
+            Message = message
+        };
+
+        await _kcpPingRequester.SendAsync(request, cancellationToken);
+        _logger.LogInformation("📤 Sent KCP PingRequest: {Message}", message);
+    }
+
+    /// <summary>
+    /// Gửi SimpleMessage qua KCP
+    /// </summary>
+    public async Task SendKcpMessageAsync(string message, CancellationToken cancellationToken = default)
+    {
+        if (!_kcpRegister.IsConnected)
+        {
+            throw new InvalidOperationException("KCP is not connected");
+        }
+
+        if (_kcpMessageRequester == null)
+        {
+            throw new InvalidOperationException("KCP Message requester chưa được khởi tạo. Vui lòng đợi connection hoàn tất.");
+        }
+
+        var msg = new SimpleMessage
+        {
+            Message = message
+        };
+
+        // Gửi message trước
+        await _kcpMessageRequester.SendAsync(msg, cancellationToken);
+        _logger.LogInformation("📤 Sent KCP SimpleMessage: {Message}", message);
+
+        // Sau khi gửi thành công, lưu snapshot VÀ broadcast 1 lần duy nhất
+        var sentSnapshot = new MessageSnapshot
+        {
+            Command = "message.test",
+            Content = $"[KCP] {message}",
             Direction = MessageDirection.Sent,
             Status = MessageStatus.Delivered  // Đặt luôn Delivered vì đã gửi thành công
         };

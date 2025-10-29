@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\kcp2k\kcp2k\kcp2k\kcp2k.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Protobuf Include="Protos\\message_envelope.proto" GrpcServices="None" />
     <Protobuf Include="Protos\\ping.proto" GrpcServices="None" />
   </ItemGroup>

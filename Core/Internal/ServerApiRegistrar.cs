@@ -14,6 +14,7 @@ public class ServerApiRegistrar : ServerApi.Abstractions.IServerApiRegistrar
 {
     private readonly Dictionary<string, HandlerInfo> _webSocketHandlers = new();
     private readonly Dictionary<string, HandlerInfo> _tcpStreamHandlers = new();
+    private readonly Dictionary<string, HandlerInfo> _kcpHandlers = new();
     private readonly ConnectionRegistry _connectionRegistry;
 
     public ServerApiRegistrar()
@@ -65,6 +66,25 @@ public class ServerApiRegistrar : ServerApi.Abstractions.IServerApiRegistrar
         };
     }
 
+    public void HandleKcp<TRequest, TResponse>(
+        string commandId,
+        Func<ServerApi.Abstractions.IContext, TRequest, ServerApi.Abstractions.IResponder<TResponse>, Task> handler)
+        where TRequest : class, IMessage<TRequest>, new()
+        where TResponse : class
+    {
+        var parser = new MessageParser<TRequest>(() => new TRequest());
+        
+        _kcpHandlers[commandId] = new HandlerInfo
+        {
+            Parser = bytes => parser.ParseFrom(bytes),
+            Handler = async (ctx, req, resp) =>
+            {
+                var typedResponder = new ResponderAdapter<TResponse>(resp);
+                await handler(ctx, (TRequest)req, typedResponder);
+            }
+        };
+    }
+
     public void HandleBoth<TRequest, TResponse>(
         string commandId,
         Func<ServerApi.Abstractions.IContext, TRequest, ServerApi.Abstractions.IResponder<TResponse>, Task> handler)
@@ -73,6 +93,7 @@ public class ServerApiRegistrar : ServerApi.Abstractions.IServerApiRegistrar
     {
         HandleWebSocket(commandId, handler);
         HandleTcpStream(commandId, handler);
+        HandleKcp(commandId, handler);
     }
 
     internal async Task<bool> TryInvokeWebSocketAsync(string commandId, ServerApi.Abstractions.IContext context, byte[] requestBytes, ServerApi.Abstractions.IResponder<object> responder)
@@ -89,6 +110,17 @@ public class ServerApiRegistrar : ServerApi.Abstractions.IServerApiRegistrar
     internal async Task<bool> TryInvokeTcpStreamAsync(string commandId, ServerApi.Abstractions.IContext context, byte[] requestBytes, ServerApi.Abstractions.IResponder<object> responder)
     {
         if (_tcpStreamHandlers.TryGetValue(commandId, out var handlerInfo))
+        {
+            var request = handlerInfo.Parser(requestBytes);
+            await handlerInfo.Handler(context, request, responder);
+            return true;
+        }
+        return false;
+    }
+
+    internal async Task<bool> TryInvokeKcpAsync(string commandId, ServerApi.Abstractions.IContext context, byte[] requestBytes, ServerApi.Abstractions.IResponder<object> responder)
+    {
+        if (_kcpHandlers.TryGetValue(commandId, out var handlerInfo))
         {
             var request = handlerInfo.Parser(requestBytes);
             await handlerInfo.Handler(context, request, responder);

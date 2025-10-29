@@ -24,6 +24,11 @@ public class ServerApiOptions
     /// TCP Stream configuration options.
     /// </summary>
     public TcpStreamOptions? TcpStream { get; set; }
+
+    /// <summary>
+    /// KCP configuration options.
+    /// </summary>
+    public KcpOptions? Kcp { get; set; }
 }
 
 /// <summary>
@@ -67,4 +72,16 @@ public class TcpStreamOptions
     /// Maximum number of concurrent connections. Set to 0 for unlimited.
     /// </summary>
     public int MaxConnections { get; set; } = 1000;
+}
+
+/// <summary>
+/// Configuration options for KCP transport.
+/// KCP is a UDP-based reliable protocol with better performance than TCP in some scenarios.
+/// </summary>
+public class KcpOptions
+{
+    /// <summary>
+    /// KCP port to listen on.
+    /// </summary>
+    public int Port { get; set; } = 5004;
 }

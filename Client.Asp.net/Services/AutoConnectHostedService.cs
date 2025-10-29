@@ -33,7 +33,11 @@ public class AutoConnectHostedService : IHostedService
             await _registerServices.ConnectTcpAsync("localhost", 5003);
             _logger.LogInformation("✅ Auto-connected TCP Core to localhost:5003");
 
-            _logger.LogInformation("🎉 ClientCore is ready to send messages!");
+            // Tự động kết nối KCP Core với Asp.net server
+            await _registerServices.ConnectKcpAsync("localhost", 5004);
+            _logger.LogInformation("✅ Auto-connected KCP Core to localhost:5004");
+
+            _logger.LogInformation("🎉 ClientCore is ready to send messages (WebSocket + TCP + KCP)!");
         }
         catch (Exception ex)
         {
@@ -49,6 +53,7 @@ public class AutoConnectHostedService : IHostedService
         {
             await _registerServices.DisconnectWebSocketAsync();
             await _registerServices.DisconnectTcpAsync();
+            await _registerServices.DisconnectKcpAsync();
             _logger.LogInformation("✅ Disconnected from server");
         }
         catch (Exception ex)

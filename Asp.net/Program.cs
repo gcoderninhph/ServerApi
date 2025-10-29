@@ -38,6 +38,7 @@ builder.Services.AddSingleton<MessageSnapshotStore>();
 // Configure ServerApi services từ appsettings.json
 builder.Services.AddServerApiWebSocket(builder.Configuration);  // WebSocket - CHỈ 1 DÒNG!
 builder.Services.AddServerApiTcpStream(builder.Configuration);  // TCP Stream - CHỈ 1 DÒNG!
+builder.Services.AddServerApiKcp(builder.Configuration);        // KCP - CHỈ 1 DÒNG!
 
 // Add RegisterServices to handle commands
 builder.Services.AddSingleton<RegisterServices>();

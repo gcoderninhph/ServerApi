@@ -60,7 +60,31 @@ public static class ServerApiServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds both WebSocket and TCP Stream support.
+    /// Adds ServerApi KCP support with configuration from appsettings.json.
+    /// </summary>
+    public static IServiceCollection AddServerApiKcp(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Configure options from configuration (if not already done)
+        services.Configure<ServerApiOptions>(configuration.GetSection(ServerApiOptions.SectionName));
+
+        // Register the registrar as singleton - shared across all transports
+        // Only register if not already registered
+        if (!services.Any(x => x.ServiceType == typeof(ServerApiRegistrar)))
+        {
+            services.AddSingleton<ServerApiRegistrar>();
+            services.AddSingleton<IServerApiRegistrar>(sp => sp.GetRequiredService<ServerApiRegistrar>());
+        }
+
+        // Register KCP gateway as hosted service
+        services.AddHostedService<Kcp.KcpGateway>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds all ServerApi transports: WebSocket, TCP Stream, and KCP.
     /// </summary>
     public static IServiceCollection AddServerApi(
         this IServiceCollection services,
@@ -68,6 +92,7 @@ public static class ServerApiServiceCollectionExtensions
     {
         services.AddServerApiWebSocket(configuration);
         services.AddServerApiTcpStream(configuration);
+        services.AddServerApiKcp(configuration);
         return services;
     }
 }

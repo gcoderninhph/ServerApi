@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ClientCore.WebSocket;
 using ClientCore.TcpStream;
+using ClientCore.Kcp;
 
 namespace ClientCore;
 
@@ -37,6 +38,22 @@ public static class ClientCoreServiceCollectionExtensions
             var logger = sp.GetRequiredService<ILogger<TcpStreamClientRegister>>();
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return new TcpStreamClientRegister(logger, loggerFactory);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Đăng ký KCP client services
+    /// </summary>
+    public static IServiceCollection AddClientApiKcp(this IServiceCollection services)
+    {
+        // KCP Register (Singleton) - cần ILoggerFactory
+        services.AddSingleton<IKcpClientRegister>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<KcpClientRegister>>();
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            return new KcpClientRegister(logger, loggerFactory);
         });
 
         return services;
