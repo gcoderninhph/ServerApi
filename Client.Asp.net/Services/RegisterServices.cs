@@ -59,10 +59,12 @@ public class RegisterServices
     private void RegisterLifecycleEvents()
     {
         // WebSocket lifecycle - không có context parameter
+        _websocketRegister.AutoReconnect(true); // Bật auto-reconnect cho WebSocket
         _websocketRegister.OnConnect(OnWebSocketConnect);
         _websocketRegister.OnDisconnect(OnWebSocketDisconnect);
 
         // TCP lifecycle - không có context parameter
+        _tcpRegister.AutoReconnect(true); // Bật auto-reconnect cho TCP
         _tcpRegister.OnConnect(OnTcpConnect);
         _tcpRegister.OnDisconnect(OnTcpDisconnect);
 
@@ -71,7 +73,17 @@ public class RegisterServices
 
     private void RegisterRequester()
     {
-        // KHÔNG register ở đây nữa - sẽ register trong OnConnect khi client đã sẵn sàng
+        // ✅ Register handlers 1 lần duy nhất trong constructor
+        // Requester sẽ tự động lấy client hiện tại khi gọi SendAsync()
+        // Không cần re-register khi reconnect!
+        
+        _wsPingRequester = _websocketRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
+        _wsMessageRequester = _websocketRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
+        
+        _tcpPingRequester = _tcpRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
+        _tcpMessageRequester = _tcpRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
+        
+        _logger.LogInformation("✅ All handlers registered (will work across reconnects)");
     }
 
     // Track transport type cho handlers
@@ -148,11 +160,8 @@ public class RegisterServices
 
         // Set current transport
         _currentTransport = "WebSocket";
-
-        // Re-register handlers với client đã connected
-        _wsPingRequester = _websocketRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
-        _wsMessageRequester = _websocketRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
-        _logger.LogInformation("📝 WebSocket handlers re-registered");
+        
+        // ✅ KHÔNG CẦN re-register - Requester tự động lấy client mới
     }
 
     private void OnWebSocketDisconnect()
@@ -177,11 +186,8 @@ public class RegisterServices
 
         // Set current transport
         _currentTransport = "TCP";
-
-        // Re-register handlers với client đã connected
-        _tcpPingRequester = _tcpRegister.Register<PingRequest, PingResponse>("ping", OnPingResponseHandler, OnPingErrorHandler);
-        _tcpMessageRequester = _tcpRegister.Register<SimpleMessage, SimpleMessage>("message.test", OnMessageHandler, OnMessageErrorHandler);
-        _logger.LogInformation("📝 TCP handlers re-registered");
+        
+        // ✅ KHÔNG CẦN re-register - Requester tự động lấy client mới
     }
 
     private void OnTcpDisconnect()

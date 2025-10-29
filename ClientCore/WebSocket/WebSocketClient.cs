@@ -16,6 +16,7 @@ public class WebSocketClient : IServerApiClient, IDisposable
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
     private bool _autoReconnectEnabled = false;
+    private int _maxReconnectRetries = 0;  // 0 = infinite, > 0 = max retries
     private bool _isDisposing = false;
 
     public bool IsConnected => _webSocket.State == WebSocketState.Open;
@@ -88,10 +89,14 @@ public class WebSocketClient : IServerApiClient, IDisposable
     /// <summary>
     /// Enable/disable auto reconnect when connection lost
     /// </summary>
-    public void EnableAutoReconnect(bool enable)
+    /// <param name="enable">Enable auto-reconnect</param>
+    /// <param name="maxRetries">Max retry attempts (0 = infinite, > 0 = max retries)</param>
+    public void EnableAutoReconnect(bool enable, int maxRetries = 0)
     {
         _autoReconnectEnabled = enable;
-        _logger.LogInformation("Auto reconnect {Status}", enable ? "enabled" : "disabled");
+        _maxReconnectRetries = maxRetries;
+        _logger.LogInformation("Auto reconnect {Status}, MaxRetries: {MaxRetries}", 
+            enable ? "enabled" : "disabled", maxRetries == 0 ? "INFINITE" : maxRetries.ToString());
     }
 
     /// <summary>
@@ -325,16 +330,24 @@ public class WebSocketClient : IServerApiClient, IDisposable
 
     private async Task ReconnectWithBackoffAsync()
     {
+        var maxRetries = _maxReconnectRetries; // 0 = infinite
+        var maxRetriesDisplay = maxRetries == 0 ? "∞" : maxRetries.ToString();
+        
+        _logger.LogWarning("🔄 [WS.Reconnect] Started (AutoReconnect: {AutoReconnect}, MaxRetries: {MaxRetries}, IsDisposing: {IsDisposing})", 
+            _autoReconnectEnabled, maxRetriesDisplay, _isDisposing);
+        
         var retryCount = 0;
-        var maxRetries = 10;
         var baseDelay = TimeSpan.FromSeconds(1);
 
-        while (_autoReconnectEnabled && !_isDisposing && retryCount < maxRetries)
+        // Loop: if maxRetries == 0 (infinite), condition is always true
+        //       if maxRetries > 0, loop until retryCount >= maxRetries
+        while (_autoReconnectEnabled && !_isDisposing && (maxRetries == 0 || retryCount < maxRetries))
         {
             retryCount++;
             var delay = TimeSpan.FromSeconds(Math.Min(baseDelay.TotalSeconds * Math.Pow(2, retryCount - 1), 60));
 
-            _logger.LogInformation("Reconnect attempt {Retry}/{MaxRetries} after {Delay}s...", retryCount, maxRetries, delay.TotalSeconds);
+            _logger.LogWarning("⏳ [WS.Reconnect] Attempt {Retry}/{MaxRetries} after {Delay}s...", 
+                retryCount, maxRetriesDisplay, delay.TotalSeconds);
             await Task.Delay(delay);
 
             try
@@ -354,21 +367,25 @@ public class WebSocketClient : IServerApiClient, IDisposable
                 }
 
                 await ConnectAsync();
-                _logger.LogInformation("✅ Reconnected successfully");
+                _logger.LogWarning("✅ [WS.Reconnect] ConnectAsync succeeded after {Retry} attempts! (ReceiveLoop already started by ConnectAsync)", retryCount);
                 
-                // Start receive loop after successful reconnect
-                _receiveCts = new CancellationTokenSource();
-                _receiveTask = Task.Run(async () => await ReceiveLoopAsync(_receiveCts.Token));
+                // ✅ KHÔNG CẦN start ReceiveLoop ở đây - ConnectAsync() đã làm rồi!
+                // ConnectAsync() đã:
+                // 1. Create new CancellationTokenSource
+                // 2. Start ReceiveLoopAsync()
+                // 3. Invoke OnConnect callback
                 
                 return;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Reconnect attempt {Retry} failed", retryCount);
+                _logger.LogError(ex, "❌ [WS.Reconnect] Attempt {Retry}/{MaxRetries} failed", 
+                    retryCount, maxRetriesDisplay);
             }
         }
 
-        _logger.LogError("Failed to reconnect after {MaxRetries} attempts", maxRetries);
+        _logger.LogError("💀 [WS.Reconnect] Failed to reconnect after {Retry} attempts (MaxRetries: {MaxRetries})", 
+            retryCount, maxRetriesDisplay);
     }
 
     public void Dispose()

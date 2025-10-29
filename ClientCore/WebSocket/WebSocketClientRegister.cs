@@ -17,6 +17,8 @@ public class WebSocketClientRegister : IWebSocketClientRegister
     private Action? _onConnectHandler;
     private Action? _onDisconnectHandler;
     private WebSocketClient? _client;
+    private bool _autoReconnectEnabled = false;  // Store auto-reconnect setting
+    private int _maxReconnectRetries = 0;  // Store max retries (0 = infinite)
 
     public bool IsConnected => _client?.IsConnected ?? false;
     public WebSocketClient? Client => _client;
@@ -68,6 +70,14 @@ public class WebSocketClientRegister : IWebSocketClientRegister
             }
         }
 
+        // Apply auto-reconnect setting if it was set before ConnectAsync
+        if (_autoReconnectEnabled)
+        {
+            _logger.LogInformation("🔧 [WS.Register.ConnectAsync] Applying stored AutoReconnect setting: {Enabled}, MaxRetries: {MaxRetries}", 
+                _autoReconnectEnabled, _maxReconnectRetries == 0 ? "INFINITE" : _maxReconnectRetries.ToString());
+            _client.EnableAutoReconnect(_autoReconnectEnabled, _maxReconnectRetries);
+        }
+
         _logger.LogInformation("📞 Calling _client.ConnectAsync()...");
         await _client.ConnectAsync(cancellationToken);
         _logger.LogInformation("✅ _client.ConnectAsync() completed");
@@ -104,8 +114,9 @@ public class WebSocketClientRegister : IWebSocketClientRegister
             throw new ArgumentNullException(nameof(errorHandler));
         }
 
-        // Tạo requester instance để return cho client (dùng để gửi TRequest)
-        var requester = new Requester<TRequest, TResponse>(_client!, id);
+        // ✅ Tạo requester với Func để lấy client động (luôn lấy _client hiện tại)
+        // Khi reconnect tạo client mới, requester vẫn hoạt động với client mới
+        var requester = new Requester<TRequest, TResponse>(() => _client, id);
 
         // Lưu handlers để xử lý TResponse nhận từ server
         var registeredHandler = new RegisteredHandler
@@ -167,15 +178,24 @@ public class WebSocketClientRegister : IWebSocketClientRegister
         _logger.LogInformation("Registered OnDisconnect handler for WebSocket client");
     }
 
-    public void AutoReconnect(bool enable)
+    public void AutoReconnect(bool enable, int maxRetries = 0)
     {
+        _logger.LogWarning("🔧 [WS.Register.AutoReconnect] Called with enable={Enable}, maxRetries={MaxRetries}, client={ClientNull}", 
+            enable, maxRetries == 0 ? "INFINITE" : maxRetries.ToString(), _client == null ? "NULL" : "NOT NULL");
+        
+        // Store the settings
+        _autoReconnectEnabled = enable;
+        _maxReconnectRetries = maxRetries;
+        
         if (_client == null)
         {
-            _logger.LogWarning("Cannot enable auto-reconnect: client is not initialized");
+            _logger.LogWarning("⚠️ [WS.Register.AutoReconnect] Client not initialized yet - settings stored for later application");
             return;
         }
 
-        _client.EnableAutoReconnect(enable);
+        _logger.LogInformation("✅ [WS.Register.AutoReconnect] Calling _client.EnableAutoReconnect({Enable}, {MaxRetries})", 
+            enable, maxRetries == 0 ? "INFINITE" : maxRetries.ToString());
+        _client.EnableAutoReconnect(enable, maxRetries);
     }
 
     public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)

@@ -21,7 +21,9 @@ public interface IClientRegister
     /// <summary>
     /// Bật/tắt tính năng tự động kết nối lại khi mất kết nối
     /// </summary>
-    void AutoReconnect(bool enable);
+    /// <param name="enable">Bật/tắt auto-reconnect</param>
+    /// <param name="maxRetries">Số lần thử lại tối đa (0 = vô hạn, > 0 = giới hạn số lần)</param>
+    void AutoReconnect(bool enable, int maxRetries = 0);
 
     /// <summary>
     /// Gửi một request với việc tương quan requestId và chờ phản hồi với timeout.

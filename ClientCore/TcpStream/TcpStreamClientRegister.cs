@@ -15,6 +15,8 @@ public class TcpStreamClientRegister : ITcpStreamClientRegister
     private Action? _onConnectHandler;
     private Action? _onDisconnectHandler;
     private TcpStreamClient? _client;
+    private bool _autoReconnectEnabled = false;  // Store auto-reconnect setting
+    private int _maxReconnectRetries = 0;  // Store max retries (0 = infinite)
 
     public bool IsConnected => _client?.IsConnected ?? false;
     public TcpStreamClient? Client => _client;
@@ -40,6 +42,14 @@ public class TcpStreamClientRegister : ITcpStreamClientRegister
 
         var clientLogger = _loggerFactory.CreateLogger<TcpStreamClient>();
         _client = new TcpStreamClient(host, port, clientLogger, this);
+
+        // Apply auto-reconnect setting if it was set before ConnectAsync
+        if (_autoReconnectEnabled)
+        {
+            _logger.LogInformation("🔧 [Register.ConnectAsync] Applying stored AutoReconnect setting: {Enabled}, MaxRetries: {MaxRetries}", 
+                _autoReconnectEnabled, _maxReconnectRetries == 0 ? "INFINITE" : _maxReconnectRetries.ToString());
+            _client.EnableAutoReconnect(_autoReconnectEnabled, _maxReconnectRetries);
+        }
 
         await _client.ConnectAsync(cancellationToken);
     }
@@ -75,8 +85,9 @@ public class TcpStreamClientRegister : ITcpStreamClientRegister
             throw new ArgumentNullException(nameof(errorHandler));
         }
 
-        // Tạo requester instance để return cho client (dùng để gửi TRequest)
-        var requester = new Requester<TRequest, TResponse>(_client!, id);
+        // ✅ Tạo requester với Func để lấy client động (luôn lấy _client hiện tại)
+        // Khi reconnect tạo client mới, requester vẫn hoạt động với client mới
+        var requester = new Requester<TRequest, TResponse>(() => _client, id);
 
         // Lưu handlers để xử lý TResponse nhận từ server
         var registeredHandler = new RegisteredHandler
@@ -138,15 +149,24 @@ public class TcpStreamClientRegister : ITcpStreamClientRegister
         _logger.LogInformation("Registered OnDisconnect handler for TCP Stream client");
     }
 
-    public void AutoReconnect(bool enable)
+    public void AutoReconnect(bool enable, int maxRetries = 0)
     {
+        _logger.LogWarning("🔧 [Register.AutoReconnect] Called with enable={Enable}, maxRetries={MaxRetries}, client={ClientNull}", 
+            enable, maxRetries == 0 ? "INFINITE" : maxRetries.ToString(), _client == null ? "NULL" : "NOT NULL");
+        
+        // Store the settings
+        _autoReconnectEnabled = enable;
+        _maxReconnectRetries = maxRetries;
+        
         if (_client == null)
         {
-            _logger.LogWarning("Cannot enable auto-reconnect: client is not initialized");
+            _logger.LogWarning("⚠️ [Register.AutoReconnect] Client not initialized yet - settings stored for later application");
             return;
         }
 
-        _client.EnableAutoReconnect(enable);
+        _logger.LogInformation("✅ [Register.AutoReconnect] Calling _client.EnableAutoReconnect({Enable}, {MaxRetries})", 
+            enable, maxRetries == 0 ? "INFINITE" : maxRetries.ToString());
+        _client.EnableAutoReconnect(enable, maxRetries);
     }
 
     public async Task<TResponse> SendRequestAsync<TRequest, TResponse>(string id, TRequest request, CancellationToken cancellationToken = default)
@@ -161,25 +181,33 @@ public class TcpStreamClientRegister : ITcpStreamClientRegister
 
     internal void InvokeOnConnect()
     {
+        _logger.LogWarning("🔔 [Register.InvokeOnConnect] Called (handler={HandlerNull})", 
+            _onConnectHandler == null ? "NULL" : "NOT NULL");
+        
         try
         {
             _onConnectHandler?.Invoke();
+            _logger.LogInformation("✅ [Register.InvokeOnConnect] Handler invoked successfully");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in OnConnect handler for TCP Stream client");
+            _logger.LogError(ex, "❌ [Register.InvokeOnConnect] Error in OnConnect handler");
         }
     }
 
     internal void InvokeOnDisconnect()
     {
+        _logger.LogWarning("🔔 [Register.InvokeOnDisconnect] Called (handler={HandlerNull})", 
+            _onDisconnectHandler == null ? "NULL" : "NOT NULL");
+        
         try
         {
             _onDisconnectHandler?.Invoke();
+            _logger.LogInformation("✅ [Register.InvokeOnDisconnect] Handler invoked successfully");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in OnDisconnect handler for TCP Stream client");
+            _logger.LogError(ex, "❌ [Register.InvokeOnDisconnect] Error in OnDisconnect handler");
         }
     }
 

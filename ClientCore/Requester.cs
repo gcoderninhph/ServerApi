@@ -6,6 +6,7 @@ namespace ClientCore;
 
 /// <summary>
 /// Lớp triển khai IRequester để gửi request đến server
+/// Sử dụng Func để lấy client động, tránh reference client cũ khi reconnect
 /// </summary>
 /// <typeparam name="TRequest">Loại request body</typeparam>
 /// <typeparam name="TResponse">Loại response body (cần để call client.SendAsync)</typeparam>
@@ -13,12 +14,12 @@ internal class Requester<TRequest, TResponse> : IRequester<TRequest>
     where TRequest : class, IMessage
     where TResponse : class, IMessage, new()
 {
-    private readonly IServerApiClient? _client;
+    private readonly Func<IServerApiClient?> _getClient;  // ✅ Lấy client động
     private readonly string _commandId;
 
-    public Requester(IServerApiClient? client, string commandId)
+    public Requester(Func<IServerApiClient?> getClient, string commandId)
     {
-        _client = client;
+        _getClient = getClient;
         _commandId = commandId;
     }
 
@@ -27,7 +28,9 @@ internal class Requester<TRequest, TResponse> : IRequester<TRequest>
     /// </summary>
     public async Task SendAsync(TRequest requestBody, CancellationToken cancellationToken = default)
     {
-        if (_client == null)
+        var client = _getClient();  // ✅ Lấy client hiện tại
+        
+        if (client == null)
         {
             throw new InvalidOperationException("Client chưa được khởi tạo. Hãy gọi ConnectAsync trước.");
         }
@@ -39,6 +42,6 @@ internal class Requester<TRequest, TResponse> : IRequester<TRequest>
         }
 
         // Gửi request và KHÔNG CHỜ response - response sẽ được handle bởi registered handler
-        await _client.SendFireAndForgetAsync(_commandId, requestBody, cancellationToken);
+        await client.SendFireAndForgetAsync(_commandId, requestBody, cancellationToken);
     }
 }
