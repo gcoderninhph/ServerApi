@@ -1,12 +1,17 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Serilog;
 using ServerApi.Abstractions;
 using ServerApi.Configuration;
 using ServerApi.Internal;
+using ServerApi.Unity.Abstractions;
+using ServerApi.Unity.Configs;
+using ServerApi.Unity.Server;
 
 namespace ServerApi.Extensions;
 
@@ -66,21 +71,39 @@ public static class ServerApiServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Configure options from configuration (if not already done)
-        services.Configure<ServerApiOptions>(configuration.GetSection(ServerApiOptions.SectionName));
+        InitLogger();
+        KcpServerConfig kcpServerConfig = new();
+        string configPortSection = ServerApiOptions.SectionName + ":Kcp:Port";
+        ushort port = (configuration.GetValue<int>(configPortSection) is int p && p > 0 && p <= 65535) ? 
+            (ushort)p : throw new InvalidOperationException($"{configPortSection} port configuration is missing.");
+        kcpServerConfig.port = port;
 
-        // Register the registrar as singleton - shared across all transports
-        // Only register if not already registered
-        if (!services.Any(x => x.ServiceType == typeof(ServerApiRegistrar)))
-        {
-            services.AddSingleton<ServerApiRegistrar>();
-            services.AddSingleton<IServerApiRegistrar>(sp => sp.GetRequiredService<ServerApiRegistrar>());
-        }
+        UnityKcpServer server = new(kcpServerConfig);
+        server.Start();
 
-        // Register KCP gateway as hosted service
-        services.AddHostedService<Kcp.KcpGateway>();
+        _ = Task.Run(async() => {
+            while(server.IsRunning){
+                server.DispatchMessages();
+                await Task.Delay(10);
+            }
+        });
+
+        services.AddSingleton(server);
 
         return services;
+    }
+
+    private static void InitLogger()
+    {
+        if (Log.Logger == Serilog.Core.Logger.None)
+        {
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console()                              // Log ra terminal
+                .WriteTo.File("logs/app-.log", rollingInterval: RollingInterval.Day)  // Log ra file theo ngày
+                .Enrich.FromLogContext()
+                .CreateLogger();
+        }
     }
 
     /// <summary>
