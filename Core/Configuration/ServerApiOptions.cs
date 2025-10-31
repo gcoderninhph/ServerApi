@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ServerApi.Unity.Configs;
 
 namespace ServerApi.Configuration;
 
@@ -78,10 +79,7 @@ public class TcpStreamOptions
 /// Configuration options for KCP transport.
 /// KCP is a UDP-based reliable protocol with better performance than TCP in some scenarios.
 /// </summary>
-public class KcpOptions
+public class KcpOptions : KcpServerConfig
 {
-    /// <summary>
-    /// KCP port to listen on.
-    /// </summary>
-    public int Port { get; set; } = 5004;
+
 }

@@ -13,7 +13,7 @@ namespace ServerApi.Unity.Server
         private bool _isRunning = false;
         public override bool IsRunning => _isRunning;
 
-        public UnityKcpServer(KcpServerConfig kcpServerConfig) : base(kcpServerConfig.useMainThread, kcpServerConfig.workerThreadCount, kcpServerConfig.maxQueueSize)
+        public UnityKcpServer(KcpServerConfig kcpServerConfig) : base(kcpServerConfig.UseMainThread, kcpServerConfig.WorkerThreadCount, kcpServerConfig.MaxQueueSize)
         {
             _kcpServerConfig = kcpServerConfig;
             // Initialize logging
@@ -74,9 +74,9 @@ namespace ServerApi.Unity.Server
                     return;
                 }
 
-                kcpServer.Start(_kcpServerConfig.port);
+                kcpServer.Start(_kcpServerConfig.Port);
                 _isRunning = true;
-                Log.Information($"KCP Server started on port {_kcpServerConfig.port}");
+                Log.Information($"KCP Server started on port {_kcpServerConfig.Port}");
             }
             catch (Exception ex)
             {

@@ -76,7 +76,7 @@ public static class ServerApiServiceCollectionExtensions
         string configPortSection = ServerApiOptions.SectionName + ":Kcp:Port";
         ushort port = (configuration.GetValue<int>(configPortSection) is int p && p > 0 && p <= 65535) ? 
             (ushort)p : throw new InvalidOperationException($"{configPortSection} port configuration is missing.");
-        kcpServerConfig.port = port;
+        kcpServerConfig.Port = port;
 
         UnityKcpServer server = new(kcpServerConfig);
         server.Start();
