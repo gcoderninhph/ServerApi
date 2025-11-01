@@ -8,6 +8,7 @@
     <RootNamespace>kcp2k</RootNamespace>
     <AssemblyName>kcp2k</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS8600;CS8602;CS8603;CS8604;CS8618;CS8625;SYSLIB0023</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
