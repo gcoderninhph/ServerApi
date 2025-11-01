@@ -141,7 +141,6 @@ namespace ServerApi.Unity.Abstractions
             while (autoReconnect &&
                    !isConnected &&
                    !isDisposed &&
-                   !isReconnecting &&
                    (maxReconnectAttempts == 0 || reconnectAttempts < maxReconnectAttempts))
             {
                 reconnectAttempts++;
