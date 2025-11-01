@@ -8,7 +8,6 @@ using ServerApi.Unity.Server;
 using ServerApi.Protos;
 using System.Linq;
 using Serilog;
-using System.Buffers;
 
 namespace ServerApi.Unity.Abstractions
 {
@@ -150,7 +149,7 @@ namespace ServerApi.Unity.Abstractions
             Log.Debug($"Registered TCP handler for command: {commandId}");
         }
 
-        private async Task BroadcastToAllAsync(ArraySegment<byte> messageBytes, MessageType messageType)
+        private async Task BroadcastToAllAsync(byte[] messageBytes, MessageType messageType)
         {
             var tasks = new List<Task>();
 
@@ -177,6 +176,20 @@ namespace ServerApi.Unity.Abstractions
             await Task.WhenAll(tasks);
 
             Log.Debug($"Broadcasted message to {clientsList.Count} clients");
+        }
+
+
+        protected async Task OnMessageReceivedAsync(IConnection client, byte[] messageBytes)
+        {
+            try
+            {
+                var envelope = MessageEnvelope.Parser.ParseFrom(messageBytes);
+                await ProcessEnvelopeAsync(client, envelope);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error processing message from {client.ConnectionId}: {ex.Message}");
+            }
         }
 
         protected async Task OnMessageReceivedAsync(IConnection client, ArraySegment<byte> messageBytes)
@@ -229,45 +242,12 @@ namespace ServerApi.Unity.Abstractions
                 var (parser, parseMethod) = parserCache.GetOrAdd(handlerInfo.RequestType, type =>
                 {
                     var p = type.GetProperty("Parser")?.GetValue(null);
-                    var parserType = p?.GetType();
-                    var m = parserType?.GetMethod("ParseFrom", new[] { typeof(byte[]), typeof(int), typeof(int) })
-                            ?? parserType?.GetMethod("ParseFrom", new[] { typeof(byte[]) });
+                    var m = p?.GetType().GetMethod("ParseFrom", new[] { typeof(byte[]) });
                     return (p, m);
                 });
 
-                if (parser == null || parseMethod == null)
-                {
-                    await SendErrorToClientAsync(client, envelope.Id, "Parser not available", envelope.RequestId);
-                    return;
-                }
-
-                var length = envelope.Data.Length;
-                object? request = null;
-                var parameters = parseMethod.GetParameters();
-
-                if (parameters.Length == 3)
-                {
-                    var data = ArrayPool<byte>.Shared.Rent(length);
-                    try
-                    {
-                        envelope.Data.CopyTo(data, 0);
-                        request = parseMethod.Invoke(parser, new object[] { data, 0, length });
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(data);
-                    }
-                }
-                else if (parameters.Length == 1 && parameters[0].ParameterType == typeof(byte[]))
-                {
-                    var payload = envelope.Data.ToByteArray();
-                    request = parseMethod.Invoke(parser, new object[] { payload });
-                }
-                else
-                {
-                    await SendErrorToClientAsync(client, envelope.Id, "Unsupported parser signature", envelope.RequestId);
-                    return;
-                }
+                // Parse request using cached parser
+                var request = parseMethod?.Invoke(parser, new object[] { envelope.Data.ToByteArray() });
 
                 if (request == null)
                 {
@@ -300,7 +280,7 @@ namespace ServerApi.Unity.Abstractions
             }
         }
 
-        public async Task SendToClientAsync(string connectionId, ArraySegment<byte> messageBytes)
+        public async Task SendToClientAsync(string connectionId, byte[] messageBytes)
         {
             if (connections.TryGetValue(connectionId, out var client))
             {
