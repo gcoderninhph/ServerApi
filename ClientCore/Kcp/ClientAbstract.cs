@@ -136,13 +136,14 @@ namespace ServerApi.Unity.Abstractions
 
         private async Task AutoReconnectAsync()
         {
+            if(isReconnecting) return;
+
             while (autoReconnect &&
                    !isConnected &&
                    !isDisposed &&
                    !isReconnecting &&
                    (maxReconnectAttempts == 0 || reconnectAttempts < maxReconnectAttempts))
             {
-                isReconnecting = true;
                 reconnectAttempts++;
                 Log.Information($"Reconnection attempt {reconnectAttempts}...");
 
