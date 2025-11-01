@@ -20,6 +20,7 @@ namespace ServerApi.Unity.Client
         private readonly KcpClientConfig config;
         // Connection state
         private KcpClient? kcpClient;
+        private readonly object sendLock = new();
 
 
         public UnityKcpClient(KcpClientConfig config) : base(config.useMainThread, config.workerThreadCount, config.maxQueueSize, config.autoReconnect, config.maxReconnectAttempts, config.reconnectDelay, config.requestTimeout)
@@ -110,10 +111,19 @@ namespace ServerApi.Unity.Client
 
         #region Sending Messages
 
-        public override Task Send(byte[] messageBytes)
+        public override void Send(byte[] messageBytes)
         {
-            kcpClient?.Send(new ArraySegment<byte>(messageBytes), KcpChannel.Reliable);
-            return Task.CompletedTask;
+            lock (sendLock)
+            {
+                try
+                {
+                    kcpClient?.Send(new ArraySegment<byte>(messageBytes), KcpChannel.Reliable);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"KCP Send Error: {ex.Message}");
+                }
+            }
         }
 
         #endregion

@@ -36,19 +36,19 @@ namespace ServerApi.Unity.Client
         where TRequest : class, IMessage<TRequest>, new()
     {
         private readonly string commandId;
-        private readonly Func<string, TRequest, CancellationToken, Task> sendFunc;
+        private readonly Action<string, TRequest, CancellationToken> sendFunc;
 
         public UnityBroadcastRequester(
             string commandId,
-            Func<string, TRequest, CancellationToken, Task> sendFunc)
+            Action<string, TRequest, CancellationToken> sendFunc)
         {
             this.commandId = commandId;
             this.sendFunc = sendFunc;
         }
 
-        public async Task SendAsync(TRequest request, CancellationToken cancellationToken = default)
+        public void SendAsync(TRequest request, CancellationToken cancellationToken = default)
         {
-            await sendFunc(commandId, request, cancellationToken);
+            sendFunc(commandId, request, cancellationToken);
         }
     }
 }

@@ -68,7 +68,7 @@ namespace ServerApi.Unity.Abstractions
 
         public abstract Task ConnectAsync();
         public abstract Task DisconnectAsync();
-        public abstract Task Send(byte[] data);
+        public abstract void Send(byte[] data);
         public abstract void DispatchMessages();
 
         protected void OnConnected()
@@ -198,7 +198,7 @@ namespace ServerApi.Unity.Abstractions
 
             try
             {
-                var messageBytes = await SendMessage(null, commandId, request);
+                var messageBytes = SendMessage(null, commandId, request);
                 Log.Debug("[KCP] Sent", "", messageBytes.Length);
                 Log.Debug($"Sent request for command: {commandId}");
             }
@@ -344,7 +344,7 @@ protected void OnMessage(byte[] data)
 
             try
             {
-                var messageBytes = await SendMessage(requestId, id, request);
+                var messageBytes = SendMessage(requestId, id, request);
                 Log.Debug("Sent", "", messageBytes.Length);
                 Log.Debug($"Sent request: Command={id}, RequestId={requestId}");
                 // Chờ response với timeout
@@ -384,7 +384,7 @@ protected void OnMessage(byte[] data)
             }
         }
 
-        private async Task SendBroadcastAsync<TRequest>(
+        private void SendBroadcastAsync<TRequest>(
             string commandId,
             TRequest request,
             CancellationToken cancellationToken = default)
@@ -397,7 +397,7 @@ protected void OnMessage(byte[] data)
 
             try
             {
-                byte[] messageBytes = await SendMessage(null, commandId, request);
+                byte[] messageBytes = SendMessage(null, commandId, request);
 
                 Log.Debug("Sent", "", messageBytes.Length);
                 Log.Debug($"Sent broadcast message for command: {commandId}");
@@ -409,7 +409,7 @@ protected void OnMessage(byte[] data)
             }
         }
 
-        private async Task<byte[]> SendMessage<TRequest>(string? requestId, string commandId, TRequest request)
+        private byte[] SendMessage<TRequest>(string? requestId, string commandId, TRequest request)
             where TRequest : class, IMessage<TRequest>, new()
         {
             var envelope = new MessageEnvelope
@@ -425,7 +425,7 @@ protected void OnMessage(byte[] data)
             }
 
             var messageBytes = envelope.ToByteArray();
-            await Send(messageBytes);
+            Send(messageBytes);
             return messageBytes;
         }
 

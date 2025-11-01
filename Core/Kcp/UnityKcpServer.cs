@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using kcp2k;
+using ServerApi.Protos;
 using ServerApi.Unity.Abstractions;
 using ServerApi.Unity.Configs;
 using Log = Serilog.Log;
@@ -12,6 +14,8 @@ namespace ServerApi.Unity.Server
         private readonly KcpServer kcpServer;
         private bool _isRunning = false;
         public override bool IsRunning => _isRunning;
+
+        private readonly object sendLock = new();
 
         public UnityKcpServer(KcpServerConfig kcpServerConfig) : base(kcpServerConfig.UseMainThread, kcpServerConfig.WorkerThreadCount, kcpServerConfig.MaxQueueSize)
         {
@@ -59,9 +63,19 @@ namespace ServerApi.Unity.Server
             Log.Error($"KCP Error on connection {connectionId}: {error} - {reason}");
         }
 
-        private void Send(int connectionId, byte[] data)
+        private async void Send(int connectionId, byte[] data)
         {
-            kcpServer.Send(connectionId, new ArraySegment<byte>(data), KcpChannel.Reliable);
+            lock (sendLock)
+            {
+                try
+                {
+                    kcpServer.Send(connectionId, new ArraySegment<byte>(data), KcpChannel.Reliable);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"KCP Send Error on connection {connectionId}: {ex.Message}");
+                }
+            }
         }
 
         public override void Start()

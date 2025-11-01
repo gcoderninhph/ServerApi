@@ -300,23 +300,23 @@ namespace ServerApi.Unity.Abstractions
             }
         }
 
-        public async Task SendToClientAsync(IConnection client, byte[] messageBytes)
-        {
-            if (client == null)
-            {
-                Log.Warning($"Cannot send to disconnected client");
-                return;
-            }
-            try
-            {
-                await client.SendAsync(messageBytes);
-            }
-            catch (Exception ex)
-            {
-                // Client may have disconnected during send - log and ignore
-                Log.Debug($"Failed to send to client: {ex.Message}");
-            }
-        }
+        // public async Task SendToClientAsync(IConnection client, byte[] messageBytes)
+        // {
+        //     if (client == null)
+        //     {
+        //         Log.Warning($"Cannot send to disconnected client");
+        //         return;
+        //     }
+        //     try
+        //     {
+        //         await client.SendAsync(messageBytes);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         // Client may have disconnected during send - log and ignore
+        //         Log.Debug($"Failed to send to client: {ex.Message}");
+        //     }
+        // }
 
         public async Task SendErrorToClientAsync(IConnection client, string commandId, string errorMessage, string? requestId = null)
         {

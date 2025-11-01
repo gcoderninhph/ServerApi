@@ -18,6 +18,6 @@ namespace ServerApi.Unity.Abstractions
         /// <param name="request">The request object to send.</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>Task that completes when the message has been sent.</returns>
-        Task SendAsync(TRequest request, CancellationToken cancellationToken = default);
+        void SendAsync(TRequest request, CancellationToken cancellationToken = default);
     }
 }
