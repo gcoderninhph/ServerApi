@@ -27,6 +27,7 @@ namespace ServerApi.Unity.Abstractions
         private int maxReconnectAttempts = 0;
         private int reconnectDelay = 0;
         private bool isDisposed = false;
+        private bool isReTryingReconnect = false;
 
         public bool IsConnected => isConnected;
 
@@ -74,6 +75,7 @@ namespace ServerApi.Unity.Abstractions
         {
             reconnectAttempts = 0;
             isConnected = true;
+            isReTryingReconnect = false;
 
             _ = RunWithThread(() =>
             {
@@ -137,6 +139,7 @@ namespace ServerApi.Unity.Abstractions
             while (autoReconnect &&
                    !isConnected &&
                    !isDisposed &&
+                   !isReTryingReconnect &&
                    (maxReconnectAttempts == 0 || reconnectAttempts < maxReconnectAttempts))
             {
                 reconnectAttempts++;
