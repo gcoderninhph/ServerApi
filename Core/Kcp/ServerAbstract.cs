@@ -184,33 +184,51 @@ namespace ServerApi.Unity.Abstractions
             try
             {
                 var envelope = MessageEnvelope.Parser.ParseFrom(messageBytes);
-                var commandId = envelope.Id;
-
-                Log.Debug($"Received message: Command={commandId}, Type={envelope.Type}, From={client.ConnectionId}");
-
-                // Thread-safe handler lookup
-                HandlerInfo? handlerInfo;
-                lock (handlersLock)
-                {
-                    if (!handlers.TryGetValue(commandId, out handlerInfo))
-                    {
-                        Log.Warning($"No handler registered for command: {commandId}");
-                    }
-                }
-
-                if (handlerInfo == null)
-                {
-                    await SendErrorToClientAsync(client, commandId, $"Unknown command: {commandId}");
-                    return;
-                }
-
-
-                await RunWithThread(async () => await ProcessMessageAsync(client, envelope, handlerInfo));
+                await ProcessEnvelopeAsync(client, envelope);
             }
             catch (Exception ex)
             {
                 Log.Error($"Error processing message from {client.ConnectionId}: {ex.Message}");
             }
+        }
+
+        protected async Task OnMessageReceivedAsync(IConnection client, ArraySegment<byte> messageBytes)
+        {
+            try
+            {
+                // Parse directly from ArraySegment without allocating new array
+                var envelope = MessageEnvelope.Parser.ParseFrom(new ReadOnlySpan<byte>(messageBytes.Array, messageBytes.Offset, messageBytes.Count));
+                await ProcessEnvelopeAsync(client, envelope);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error processing message from {client.ConnectionId}: {ex.Message}");
+            }
+        }
+
+        private async Task ProcessEnvelopeAsync(IConnection client, MessageEnvelope envelope)
+        {
+            var commandId = envelope.Id;
+
+            Log.Debug($"Received message: Command={commandId}, Type={envelope.Type}, From={client.ConnectionId}");
+
+            // Thread-safe handler lookup
+            HandlerInfo? handlerInfo;
+            lock (handlersLock)
+            {
+                if (!handlers.TryGetValue(commandId, out handlerInfo) && handlerInfo == null)
+                {
+                    Log.Warning($"No handler registered for command: {commandId}");
+                }
+            }
+
+            if (handlerInfo == null)
+            {
+                await SendErrorToClientAsync(client, commandId, $"Unknown command: {commandId}");
+                return;
+            }
+
+            await RunWithThread(async () => await ProcessMessageAsync(client, envelope, handlerInfo));
         }
 
         private async Task ProcessMessageAsync(
