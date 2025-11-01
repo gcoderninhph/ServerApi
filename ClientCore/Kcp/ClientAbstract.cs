@@ -115,8 +115,9 @@ namespace ServerApi.Unity.Abstractions
 
                 ClearPendingRequest();
 
-                if (autoReconnect)
+                if (autoReconnect && !isReconnecting)
                 {
+                    isReconnecting = true;
                     _ = AutoReconnectAsync();
                 }
             });
@@ -136,8 +137,6 @@ namespace ServerApi.Unity.Abstractions
 
         private async Task AutoReconnectAsync()
         {
-            if(isReconnecting) return;
-
             while (autoReconnect &&
                    !isConnected &&
                    !isDisposed &&
@@ -162,6 +161,8 @@ namespace ServerApi.Unity.Abstractions
             {
                 Log.Error($"Failed to reconnect after {reconnectAttempts} attempts");
             }
+
+            isReconnecting = false;
         }
 
 
