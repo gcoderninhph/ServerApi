@@ -142,6 +142,7 @@ namespace ServerApi.Unity.Abstractions
                    !isReTryingReconnect &&
                    (maxReconnectAttempts == 0 || reconnectAttempts < maxReconnectAttempts))
             {
+                isReTryingReconnect = true;
                 reconnectAttempts++;
                 Log.Information($"Reconnection attempt {reconnectAttempts}...");
 
