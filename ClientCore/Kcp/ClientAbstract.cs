@@ -151,7 +151,6 @@ namespace ServerApi.Unity.Abstractions
                 try
                 {
                     await ConnectAsync();
-                    return;
                 }
                 catch (Exception ex)
                 {
