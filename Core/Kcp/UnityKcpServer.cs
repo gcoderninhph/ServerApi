@@ -46,7 +46,7 @@ namespace ServerApi.Unity.Server
         {
             if (TryGetConnectionById(connectionId.ToString(), out var connection) && connection != null)
             {
-                _ = OnMessageReceivedAsync(connection, data.ToArray());
+                _ = OnMessageReceivedAsync(connection, data);
                 Log.Debug("Received", connection.RemoteEndpoint, data.Count);
             }
             else

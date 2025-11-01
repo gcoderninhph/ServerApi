@@ -84,14 +84,7 @@ namespace ServerApi.Unity.Client
 
         private void OnData(ArraySegment<byte> data, KcpChannel kcpChannel)
         {
-            if (data.Array != null)
-            {
-                OnMessage(data.Array);
-            }
-            else
-            {
-                Log.Warning("Received null data array");
-            }
+            OnMessage(data);
         }
 
 

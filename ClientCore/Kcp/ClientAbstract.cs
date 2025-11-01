@@ -209,42 +209,71 @@ namespace ServerApi.Unity.Abstractions
             }
         }
 
-        protected void OnMessage(byte[] data)
+protected void OnMessage(byte[] data)
         {
             try
             {
                 Log.Debug("Received", "", data.Length);
 
                 var envelope = MessageEnvelope.Parser.ParseFrom(data);
-                var commandId = envelope.Id;
-
-                Log.Debug($"Received message: Command={commandId}, Type={envelope.Type}, RequestId={envelope.RequestId}");
-
-                // Xử lý RESPONSE hoặc ERROR cho pending request
-                if (!string.IsNullOrEmpty(envelope.RequestId))
+                bool flowControl = OnMessage(envelope);
+                if (!flowControl)
                 {
-                    if (pendingRequests.TryRemove(envelope.RequestId, out var tcs))
-                    {
-                        if (envelope.Type == MessageType.Error)
-                        {
-                            var errorMessage = envelope.Data.ToStringUtf8();
-                            Log.Error($"Received error response for RequestId={envelope.RequestId}: {errorMessage}");
-                            tcs.TrySetException(new Exception($"Server returned error: {errorMessage}"));
-                        }
-                        else if (envelope.Type == MessageType.Response)
-                        {
-                            tcs.TrySetResult(envelope);
-                        }
-                        return;
-                    }
+                    return;
                 }
-
-                _ = RunWithThread(async () => await ProcessMessage(envelope));
             }
             catch (Exception ex)
             {
                 Log.Error($"Error processing WebSocket message: {ex.Message}");
             }
+        }
+
+        protected void OnMessage(ArraySegment<byte> data)
+        {
+            try
+            {
+                Log.Debug("Received", "", data.Count);
+                // Parse directly from ArraySegment without allocating new array
+                var envelope = MessageEnvelope.Parser.ParseFrom(new ReadOnlySpan<byte>(data.Array, data.Offset, data.Count));
+                bool flowControl = OnMessage(envelope);
+                if (!flowControl)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error processing message: {ex.Message}");
+            }
+        }
+
+        private bool OnMessage(MessageEnvelope envelope)
+        {
+            var commandId = envelope.Id;
+
+            Log.Debug($"Received message: Command={commandId}, Type={envelope.Type}, RequestId={envelope.RequestId}");
+
+            // Xử lý RESPONSE hoặc ERROR cho pending request
+            if (!string.IsNullOrEmpty(envelope.RequestId))
+            {
+                if (pendingRequests.TryRemove(envelope.RequestId, out var tcs))
+                {
+                    if (envelope.Type == MessageType.Error)
+                    {
+                        var errorMessage = envelope.Data.ToStringUtf8();
+                        Log.Error($"Received error response for RequestId={envelope.RequestId}: {errorMessage}");
+                        tcs.TrySetException(new Exception($"Server returned error: {errorMessage}"));
+                    }
+                    else if (envelope.Type == MessageType.Response)
+                    {
+                        tcs.TrySetResult(envelope);
+                    }
+                    return false;
+                }
+            }
+
+            _ = RunWithThread(async () => await ProcessMessage(envelope));
+            return true;
         }
 
         private Task ProcessMessage(MessageEnvelope envelope)
