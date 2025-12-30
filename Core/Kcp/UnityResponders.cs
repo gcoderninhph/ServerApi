@@ -45,7 +45,13 @@ namespace ServerApi.Unity.Server
                 // var bytes = envelope.ToByteArray();
                 var size = envelope.CalculateSize();
                 var data = ArrayPool<byte>.Shared.Rent(size);
-                envelope.Data.CopyTo(data, 0);
+
+                using (var cos = new CodedOutputStream(data))
+                {
+                    envelope.WriteTo(cos);
+                    cos.Flush();
+                }
+                
                 var dataSegment = new ArraySegment<byte>(data, 0, size);
 
                 await client.SendAsync(dataSegment);
@@ -118,7 +124,13 @@ namespace ServerApi.Unity.Server
                 };
                 var size = envelope.CalculateSize();
                 var data = ArrayPool<byte>.Shared.Rent(size);
-                envelope.Data.CopyTo(data, 0);
+
+                using (var cos = new CodedOutputStream(data))
+                {
+                    envelope.WriteTo(cos);
+                    cos.Flush();
+                }
+                
                 var bytes = new ArraySegment<byte>(data, 0, size);
 
                 await sendFunc(connectionId, bytes);
@@ -147,7 +159,13 @@ namespace ServerApi.Unity.Server
 
                 var size = envelope.CalculateSize();
                 var data = ArrayPool<byte>.Shared.Rent(size);
-                envelope.Data.CopyTo(data, 0);
+
+                using (var cos = new CodedOutputStream(data))
+                {
+                    envelope.WriteTo(cos);
+                    cos.Flush();
+                }
+                
                 var bytes = new ArraySegment<byte>(data, 0, size);
                 
                 await sendFunc(connectionId, bytes);
@@ -176,7 +194,13 @@ namespace ServerApi.Unity.Server
 
                 var size = envelope.CalculateSize();
                 var data = ArrayPool<byte>.Shared.Rent(size);
-                envelope.Data.CopyTo(data, 0);
+
+                using (var cos = new CodedOutputStream(data))
+                {
+                    envelope.WriteTo(cos);
+                    cos.Flush();
+                }
+                
                 var bytes = new ArraySegment<byte>(data, 0, size);
 
                 await broadcastFunc(bytes, MessageType.Request);
