@@ -233,7 +233,7 @@ namespace ServerApi.Unity.Abstractions
                     return (p, m);
                 });
 
-                var length = envelope.CalculateSize();
+                var length = envelope.Data.Length;
                 var data = ArrayPool<byte>.Shared.Rent(length);
                 envelope.Data.CopyTo(data, 0);
                 var dataSegment = new ArraySegment<byte>(data, 0, length);
