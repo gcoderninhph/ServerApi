@@ -229,19 +229,45 @@ namespace ServerApi.Unity.Abstractions
                 var (parser, parseMethod) = parserCache.GetOrAdd(handlerInfo.RequestType, type =>
                 {
                     var p = type.GetProperty("Parser")?.GetValue(null);
-                    var m = p?.GetType().GetMethod("ParseFrom", new[] { typeof(ReadOnlySpan<byte>) });
+                    var parserType = p?.GetType();
+                    var m = parserType?.GetMethod("ParseFrom", new[] { typeof(byte[]), typeof(int), typeof(int) })
+                            ?? parserType?.GetMethod("ParseFrom", new[] { typeof(byte[]) });
                     return (p, m);
                 });
 
+                if (parser == null || parseMethod == null)
+                {
+                    await SendErrorToClientAsync(client, envelope.Id, "Parser not available", envelope.RequestId);
+                    return;
+                }
+
                 var length = envelope.Data.Length;
-                var data = ArrayPool<byte>.Shared.Rent(length);
-                envelope.Data.CopyTo(data, 0);
-                var dataSegment = new ArraySegment<byte>(data, 0, length);
+                object? request = null;
+                var parameters = parseMethod.GetParameters();
 
-                // Parse request using cached parser
-                var request = parseMethod?.Invoke(parser, new object[] { dataSegment });
-
-                ArrayPool<byte>.Shared.Return(data);
+                if (parameters.Length == 3)
+                {
+                    var data = ArrayPool<byte>.Shared.Rent(length);
+                    try
+                    {
+                        envelope.Data.CopyTo(data, 0);
+                        request = parseMethod.Invoke(parser, new object[] { data, 0, length });
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(data);
+                    }
+                }
+                else if (parameters.Length == 1 && parameters[0].ParameterType == typeof(byte[]))
+                {
+                    var payload = envelope.Data.ToByteArray();
+                    request = parseMethod.Invoke(parser, new object[] { payload });
+                }
+                else
+                {
+                    await SendErrorToClientAsync(client, envelope.Id, "Unsupported parser signature", envelope.RequestId);
+                    return;
+                }
 
                 if (request == null)
                 {
