@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf;
@@ -41,8 +42,15 @@ namespace ServerApi.Unity.Server
                     RequestId = requestId // Trả lại requestId để client có thể khớp với pending request
                 };
 
-                var bytes = envelope.ToByteArray();
-                await client.SendAsync(bytes);
+                // var bytes = envelope.ToByteArray();
+                var size = envelope.CalculateSize();
+                var data = ArrayPool<byte>.Shared.Rent(size);
+                envelope.Data.CopyTo(data, 0);
+                var dataSegment = new ArraySegment<byte>(data, 0, size);
+
+                await client.SendAsync(dataSegment);
+
+                ArrayPool<byte>.Shared.Return(data);
 
                 Log.Debug($"Sent response for command '{commandId}' to connection '{client.ConnectionId}', RequestId='{requestId}'");
             }
@@ -85,13 +93,13 @@ namespace ServerApi.Unity.Server
         where TBody : class, IMessage<TBody>, new()
     {
         private readonly string commandId;
-        private readonly Func<string, byte[], Task> sendFunc;
-        private readonly Func<byte[], MessageType, Task> broadcastFunc;
+        private readonly Func<string, ArraySegment<byte>, Task> sendFunc;
+        private readonly Func<ArraySegment<byte>, MessageType, Task> broadcastFunc;
 
         public UnityBroadcastResponder(
             string commandId,
-            Func<string, byte[], Task> sendFunc,
-            Func<byte[], MessageType, Task> broadcastFunc)
+            Func<string, ArraySegment<byte>, Task> sendFunc,
+            Func<ArraySegment<byte>, MessageType, Task> broadcastFunc)
         {
             this.commandId = commandId;
             this.sendFunc = sendFunc;
@@ -108,9 +116,14 @@ namespace ServerApi.Unity.Server
                     Data = body.ToByteString(),
                     Type = MessageType.Request
                 };
+                var size = envelope.CalculateSize();
+                var data = ArrayPool<byte>.Shared.Rent(size);
+                envelope.Data.CopyTo(data, 0);
+                var bytes = new ArraySegment<byte>(data, 0, size);
 
-                var bytes = envelope.ToByteArray();
                 await sendFunc(connectionId, bytes);
+
+                ArrayPool<byte>.Shared.Return(data);
 
                 Log.Debug($"Sent broadcast message for command '{commandId}' to connection '{connectionId}'");
             }
@@ -132,8 +145,14 @@ namespace ServerApi.Unity.Server
                     Type = MessageType.Error
                 };
 
-                var bytes = envelope.ToByteArray();
+                var size = envelope.CalculateSize();
+                var data = ArrayPool<byte>.Shared.Rent(size);
+                envelope.Data.CopyTo(data, 0);
+                var bytes = new ArraySegment<byte>(data, 0, size);
+                
                 await sendFunc(connectionId, bytes);
+
+                ArrayPool<byte>.Shared.Return(data);
 
                 Log.Debug($"Sent broadcast error for command '{commandId}' to connection '{connectionId}': {errorMessage}");
             }
@@ -155,8 +174,14 @@ namespace ServerApi.Unity.Server
                     Type = MessageType.Request
                 };
 
-                var bytes = envelope.ToByteArray();
+                var size = envelope.CalculateSize();
+                var data = ArrayPool<byte>.Shared.Rent(size);
+                envelope.Data.CopyTo(data, 0);
+                var bytes = new ArraySegment<byte>(data, 0, size);
+
                 await broadcastFunc(bytes, MessageType.Request);
+
+                ArrayPool<byte>.Shared.Return(data);
 
                 Log.Debug($"Broadcasted message for command '{commandId}' to all clients");
             }

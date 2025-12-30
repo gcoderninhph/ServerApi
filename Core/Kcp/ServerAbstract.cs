@@ -8,6 +8,7 @@ using ServerApi.Unity.Server;
 using ServerApi.Protos;
 using System.Linq;
 using Serilog;
+using System.Buffers;
 
 namespace ServerApi.Unity.Abstractions
 {
@@ -149,7 +150,7 @@ namespace ServerApi.Unity.Abstractions
             Log.Debug($"Registered TCP handler for command: {commandId}");
         }
 
-        private async Task BroadcastToAllAsync(byte[] messageBytes, MessageType messageType)
+        private async Task BroadcastToAllAsync(ArraySegment<byte> messageBytes, MessageType messageType)
         {
             var tasks = new List<Task>();
 
@@ -176,20 +177,6 @@ namespace ServerApi.Unity.Abstractions
             await Task.WhenAll(tasks);
 
             Log.Debug($"Broadcasted message to {clientsList.Count} clients");
-        }
-
-
-        protected async Task OnMessageReceivedAsync(IConnection client, byte[] messageBytes)
-        {
-            try
-            {
-                var envelope = MessageEnvelope.Parser.ParseFrom(messageBytes);
-                await ProcessEnvelopeAsync(client, envelope);
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error processing message from {client.ConnectionId}: {ex.Message}");
-            }
         }
 
         protected async Task OnMessageReceivedAsync(IConnection client, ArraySegment<byte> messageBytes)
@@ -246,8 +233,15 @@ namespace ServerApi.Unity.Abstractions
                     return (p, m);
                 });
 
+                var length = envelope.CalculateSize();
+                var data = ArrayPool<byte>.Shared.Rent(length);
+                envelope.Data.CopyTo(data, 0);
+                var dataSegment = new ArraySegment<byte>(data, 0, length);
+
                 // Parse request using cached parser
-                var request = parseMethod?.Invoke(parser, new object[] { envelope.Data.ToByteArray() });
+                var request = parseMethod?.Invoke(parser, new object[] { dataSegment });
+
+                ArrayPool<byte>.Shared.Return(data);
 
                 if (request == null)
                 {
@@ -280,7 +274,7 @@ namespace ServerApi.Unity.Abstractions
             }
         }
 
-        public async Task SendToClientAsync(string connectionId, byte[] messageBytes)
+        public async Task SendToClientAsync(string connectionId, ArraySegment<byte> messageBytes)
         {
             if (connections.TryGetValue(connectionId, out var client))
             {

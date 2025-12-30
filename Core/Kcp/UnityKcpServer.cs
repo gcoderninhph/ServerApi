@@ -63,13 +63,13 @@ namespace ServerApi.Unity.Server
             Log.Error($"KCP Error on connection {connectionId}: {error} - {reason}");
         }
 
-        private async void Send(int connectionId, byte[] data)
+        private async void Send(int connectionId, ArraySegment<byte> data)
         {
             lock (sendLock)
             {
                 try
                 {
-                    kcpServer.Send(connectionId, new ArraySegment<byte>(data), KcpChannel.Reliable);
+                    kcpServer.Send(connectionId, data, KcpChannel.Reliable);
                 }
                 catch (Exception ex)
                 {

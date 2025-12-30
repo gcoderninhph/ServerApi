@@ -18,7 +18,7 @@ namespace ServerApi.Unity.Server
         private readonly int connectionId;
         private readonly string remoteEndpoint;
         private readonly IUnityContext context;
-        private readonly Action<int, byte[]> sendDataAction;
+        private readonly Action<int, ArraySegment<byte>> sendDataAction;
         private readonly Action<IConnection> onDisconnected;
 
 
@@ -29,7 +29,7 @@ namespace ServerApi.Unity.Server
         public override IUnityContext Context => context;
 
 
-        public KcpConnection(int connectionId, IPEndPoint remoteEndPoint, Action<int, byte[]> sendDataAction, Action<IConnection> onDisconnected)
+        public KcpConnection(int connectionId, IPEndPoint remoteEndPoint, Action<int, ArraySegment<byte>> sendDataAction, Action<IConnection> onDisconnected)
         {
             this.connectionId = connectionId;
             remoteEndpoint = remoteEndPoint.ToString();
@@ -44,7 +44,7 @@ namespace ServerApi.Unity.Server
             onDisconnected?.Invoke(this);
         }
 
-        public override Task SendAsync(byte[] messageBytes)
+        public override Task SendAsync(ArraySegment<byte> messageBytes)
         {
             sendDataAction(connectionId, messageBytes);
             return Task.CompletedTask;
