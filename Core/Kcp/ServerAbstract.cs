@@ -229,7 +229,7 @@ namespace ServerApi.Unity.Abstractions
                 var (parser, parseMethod) = parserCache.GetOrAdd(handlerInfo.RequestType, type =>
                 {
                     var p = type.GetProperty("Parser")?.GetValue(null);
-                    var m = p?.GetType().GetMethod("ParseFrom", new[] { typeof(byte[]) });
+                    var m = p?.GetType().GetMethod("ParseFrom", new[] { typeof(ReadOnlySpan<byte>) });
                     return (p, m);
                 });
 
